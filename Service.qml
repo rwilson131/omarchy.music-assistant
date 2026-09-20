@@ -584,12 +584,12 @@ Item {
   function setVolume(playerId, volumePercent) {
     var pid = playerId || root.activePlayerId
     var v = Math.max(0, Math.min(100, Math.round(volumePercent)))
-    root.actionForPlayer(pid, "players/cmd/volume_set", { volume_level: v })
+    root.runAction("players/cmd/volume_set", { player_id: pid, volume_level: v })
   }
 
   function setMuted(playerId, muted) {
     var pid = playerId || root.activePlayerId
-    root.actionForPlayer(pid, "players/cmd/volume_mute", { muted: !!muted })
+    root.runAction("players/cmd/volume_mute", { player_id: pid, muted: !!muted })
   }
 
   function toggleMute(playerId) {
@@ -894,7 +894,7 @@ Item {
 
   function power(playerId, on) {
     var pid = playerId || root.activePlayerId
-    root.actionForPlayer(pid, "players/cmd/power", { powered: !!on })
+    root.runAction("players/cmd/power", { player_id: pid, powered: !!on })
   }
 
   function addFavorite(uri) {
@@ -933,8 +933,12 @@ Item {
   function _favFetchNext() {
     if (root._favIndex >= root._favTypes.length) return
     var t = root._favTypes[root._favIndex++]
+    // Favorites are Music Assistant library items marked favorite. There is
+    // no music/favorites/* API; query each media controller instead.
+    var controller = t === "radio" ? "radios" : t
     var payload = MaApi.buildArgs(root.config.url, root.config.token,
-      "music/favorites/" + t, { limit: 50 }, "fav-" + t)
+      "music/" + controller + "/library_items",
+      { limit: 50, favorite: true }, "fav-" + t)
     favProc.typeKey = t
     root.runMaRequest(favProc, payload)
   }

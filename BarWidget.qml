@@ -32,10 +32,28 @@ BarWidget {
   property string popupSection: "now"
   property bool popupOpen: false
 
-  onPopupSectionChanged: if (popupSection !== "search") searchFilter = "all"
+  onPopupSectionChanged: {
+    if (popupSection !== "search") searchFilter = "all"
+    activatePopupSection()
+  }
 
   function close() { popupOpen = false }
   function openSection(s) { popupSection = s; popupOpen = true }
+
+  function activatePopupSection() {
+    if (!popupOpen || !service) return
+    if (popupSection === "search") {
+      // Run after the popup FocusScope receives focus so it cannot steal
+      // focus back from the text field.
+      Qt.callLater(function() { searchInput.forceActiveFocus() })
+    } else if (popupSection === "favorites") {
+      service.refreshFavorites()
+    } else if (popupSection === "playlists") {
+      service.refreshPlaylists()
+    } else if (popupSection === "recent") {
+      service.refreshRecent()
+    }
+  }
 
   property real maxLabelWidth: 180
   property real popupWidth: 380
@@ -142,18 +160,13 @@ BarWidget {
     contentHeight: popup.fittedContentHeight(Math.max(sidebar.implicitHeight, 320), 560)
 
     onOpenChanged: {
-      if (open && root.service) {
-        if (typeof root.service.refreshState === "function") root.service.refreshState()
-        if (root.popupSection === "search") {
-          Qt.callLater(function() {
-            if (searchInput) searchInput.forceActiveFocus()
-          })
-        }
-        if (root.popupSection === "favorites") root.service.refreshFavorites()
-        if (root.popupSection === "playlists") root.service.refreshPlaylists()
-        if (root.popupSection === "recent") root.service.refreshRecent()
+      if (open && root.service && typeof root.service.refreshState === "function") {
+        root.service.refreshState()
       }
-      if (open) Qt.callLater(function() { popupFocus.forceActiveFocus() })
+      if (open) Qt.callLater(function() {
+        popupFocus.forceActiveFocus()
+        root.activatePopupSection()
+      })
     }
 
     FocusScope {
