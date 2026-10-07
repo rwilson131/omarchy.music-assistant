@@ -40,6 +40,10 @@ BarWidget {
   function close() { popupOpen = false }
   function openSection(s) { popupSection = s; popupOpen = true }
 
+  // Fix: switching tabs while the popup was already open did nothing, because
+  // the per-section focus and refresh only ran from onOpenChanged. Run it from
+  // both places so the search field gets focus and the favorites, playlists
+  // and recent lists reload whichever way the section was reached.
   function activatePopupSection() {
     if (!popupOpen || !service) return
     if (popupSection === "search") {

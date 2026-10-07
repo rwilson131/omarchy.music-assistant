@@ -141,6 +141,9 @@ Item {
       "hl.unbind(\"XF86AudioPrev\")",
       "hl.unbind(\"XF86AudioPlay\")",
       "hl.unbind(\"XF86AudioPause\")",
+      // The installed block also takes the volume keys. To route them to the
+      // laptop while Music Assistant is idle instead, set installMediaKeys to
+      // false and bind them to scripts/contextual-volume-control.
       "hl.unbind(\"XF86AudioRaiseVolume\")",
       "hl.unbind(\"XF86AudioLowerVolume\")",
       "hl.unbind(\"XF86AudioMute\")",
@@ -541,6 +544,8 @@ Item {
         root.showOsd("Music Assistant", "dialog-warning", "Music Assistant didn't respond")
       if (root.actionOnExited) root.actionOnExited(code, status)
       if (typeof onFinished === "function") onFinished(code, status)
+      // Start the next waiting action (see pendingActions) once this Process
+      // has exited; starting it from here keeps them in the order sent.
       if (root.pendingActions.length > 0) {
         var next = root.pendingActions.shift()
         Qt.callLater(function() { root.runAction(next.command, next.args, next.onDone) })
@@ -630,6 +635,9 @@ Item {
   function setVolume(playerId, volumePercent) {
     var pid = playerId || root.activePlayerId
     var v = Math.max(0, Math.min(100, Math.round(volumePercent)))
+    // Fix: players/cmd/* commands take player_id. actionForPlayer() adds
+    // queue_id instead, which Music Assistant rejected, so volume, mute and
+    // power never reached the player.
     root.runAction("players/cmd/volume_set", { player_id: pid, volume_level: v })
   }
 
@@ -664,6 +672,7 @@ Item {
 
   function setMuted(playerId, muted) {
     var pid = playerId || root.activePlayerId
+    // player_id, not queue_id: see setVolume().
     root.runAction("players/cmd/volume_mute", { player_id: pid, muted: !!muted })
   }
 
@@ -986,6 +995,7 @@ Item {
 
   function power(playerId, on) {
     var pid = playerId || root.activePlayerId
+    // player_id, not queue_id: see setVolume().
     root.runAction("players/cmd/power", { player_id: pid, powered: !!on })
   }
 
@@ -1110,6 +1120,9 @@ Item {
       return "ok"
     }
 
+    // Volume keys. Bound either by the installed media-keys block or by
+    // scripts/contextual-volume-control, which calls these over IPC only
+    // while the active player is playing.
     function volumeUp(): string {
       root.adjustVolume(root.activePlayerId, 5)
       return "ok"

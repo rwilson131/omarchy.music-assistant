@@ -14,6 +14,8 @@ Item {
   property string artist: ""
   property string album: ""
   property int volume: 100
+  // Volume control for the Now section: the bar widget feeds the active
+  // player's mute state in and acts on these two signals.
   property bool muted: false
   property int elapsed: 0
   property int duration: 0
@@ -191,6 +193,8 @@ Item {
         value: root.elapsed
         bar: root.bar
         enabled: root.duration > 0
+        // Fix: Qt 6 deprecates injected signal parameters ("Parameter value is
+        // not declared" warning on every load); declare it explicitly.
         onMoved: function(value) { root.seek(value) }
       }
 

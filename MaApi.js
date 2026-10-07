@@ -77,6 +77,8 @@ function _buildCurlScript(url, bodyJson, maxTime, includeOutput) {
     "-d '" + escapedBody + "'\n"
 }
 
+// Fix: maxTime lets a caller raise the 10 s curl cap for a slow command.
+// search() passes "30"; everything else keeps the default.
 function buildArgs(url, token, command, args, messageId, maxTime) {
   var body = {
     message_id: messageId !== undefined ? messageId : "omarchy-" + (counter++),
