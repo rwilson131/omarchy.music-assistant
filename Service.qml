@@ -499,6 +499,11 @@ Item {
   function runAction(command, args, onDone) {
     if (!root.ready) return
     if (actionProc.running) {
+      // A new pick supersedes any pick still waiting: replaying every click
+      // made while the server was slow sent the Sonos four play requests in
+      // six seconds and wedged its session.
+      if (command === "player_queues/play_media")
+        root.pendingActions = root.pendingActions.filter(function(a) { return a.command !== "player_queues/play_media" })
       if (root.pendingActions.length < 20)
         root.pendingActions.push({ command: command, args: args, onDone: onDone })
       return
