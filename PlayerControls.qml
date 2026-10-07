@@ -14,6 +14,7 @@ Item {
   property string artist: ""
   property string album: ""
   property int volume: 100
+  property bool muted: false
   property int elapsed: 0
   property int duration: 0
   property bool isPlaying: false
@@ -29,6 +30,8 @@ Item {
   signal cycleRepeat()
   signal favoriteCurrent()
   signal openWebUI()
+  signal changeVolume(real percent)
+  signal toggleMute()
 
   implicitWidth: Style.space(360)
   implicitHeight: column.implicitHeight
@@ -188,7 +191,7 @@ Item {
         value: root.elapsed
         bar: root.bar
         enabled: root.duration > 0
-        onMoved: root.seek(value)
+        onMoved: function(value) { root.seek(value) }
       }
 
       Row {
@@ -205,6 +208,54 @@ Item {
           color: Qt.darker(root.bar.foreground, 1.3)
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.caption
+        }
+      }
+
+      // Volume for the active player. The slider sends on release (and on
+      // wheel) rather than on every drag step so a drag is one request, not
+      // twenty. Right-click on the track or the speaker button toggles mute.
+      Row {
+        id: volumeRow
+        width: parent.width
+        spacing: Style.space(6)
+
+        Button {
+          id: muteButton
+          iconText: root.muted || root.volume === 0 ? "󰝟" : "󰕾"
+          foreground: root.muted ? Qt.darker(root.bar.foreground, 1.3) : root.bar.foreground
+          horizontalPadding: Style.spacing.controlPaddingX
+          verticalPadding: Style.spacing.controlPaddingY
+          enabled: root.activePlayer !== null
+          opacity: enabled ? 1.0 : 0.4
+          anchors.verticalCenter: parent.verticalCenter
+          onClicked: root.toggleMute()
+        }
+
+        PanelSlider {
+          id: volumeSlider
+          width: parent.width - muteButton.width - volumeText.width - volumeRow.spacing * 2
+          anchors.verticalCenter: parent.verticalCenter
+          minimum: 0
+          maximum: 100
+          step: 5
+          integer: true
+          value: root.volume
+          bar: root.bar
+          enabled: root.activePlayer !== null
+          opacity: root.muted ? 0.5 : 1.0
+          onReleased: function(value) { root.changeVolume(value) }
+          onRightClicked: root.toggleMute()
+        }
+
+        Text {
+          id: volumeText
+          text: Math.round(volumeSlider.liveValue) + "%"
+          color: Qt.darker(root.bar.foreground, 1.3)
+          font.family: root.bar.fontFamily
+          font.pixelSize: Style.font.caption
+          width: Style.space(34)
+          horizontalAlignment: Text.AlignRight
+          anchors.verticalCenter: parent.verticalCenter
         }
       }
     }

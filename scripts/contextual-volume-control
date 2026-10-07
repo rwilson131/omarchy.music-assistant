@@ -1,0 +1,57 @@
+#!/bin/bash
+# contextual-volume-control <raise|lower|mute-toggle>
+#
+# Volume keys go to Music Assistant while its active player is playing;
+# otherwise they keep Omarchy's normal local-audio behaviour. Bound from
+# the music-assistant media-keys block in ~/.config/hypr/bindings.lua.
+
+action="${1:-}"
+case "$action" in
+  raise|lower|mute-toggle) ;;
+  *) echo "Usage: contextual-volume-control <raise|lower|mute-toggle>" >&2; exit 1 ;;
+esac
+
+plugin="io.github.manologarciadev.music-assistant"
+shell_dir="${OMARCHY_PATH:-/usr/share/omarchy}/shell"
+step=5
+
+ipc() {
+  timeout 2 /usr/bin/qs -p "$shell_dir" ipc call "$plugin" "$@" 2>/dev/null
+}
+
+# If the shell is down, the plugin is not connected, or nothing is playing in
+# Music Assistant, fall through to the local audio sink.
+status="$(ipc status)" || status=""
+if [[ -z $status ]] || [[ "$(jq -r '(.ready and .connected and .isPlaying) // false' <<<"$status" 2>/dev/null)" != true ]]; then
+  exec omarchy-audio-output-volume "$action"
+fi
+
+vol="$(jq -r '.volume // 0' <<<"$status")"
+muted="$(jq -r '.muted // false' <<<"$status")"
+name="$(jq -r '.activePlayerName // "Music Assistant"' <<<"$status")"
+
+# Mirror the plugin's own rules so the OSD shows the result of this press
+# without waiting on its state: a volume key while muted only unmutes.
+case "$action" in
+  raise)
+    ipc volumeUp >/dev/null
+    if [[ $muted == true ]]; then muted=false; else vol=$((vol + step)); fi
+    ;;
+  lower)
+    ipc volumeDown >/dev/null
+    if [[ $muted == true ]]; then muted=false; else vol=$((vol - step)); fi
+    ;;
+  mute-toggle)
+    ipc toggleMute >/dev/null
+    if [[ $muted == true ]]; then muted=false; else muted=true; fi
+    ;;
+esac
+((vol > 100)) && vol=100
+((vol < 0)) && vol=0
+
+icon="volume-high"
+if [[ $muted == true || $vol -eq 0 ]]; then
+  icon="volume-muted"
+fi
+
+omarchy-osd -i "$icon" -p "$vol" -m "$name"

@@ -5,6 +5,20 @@ All notable changes to this plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - rwilson131 fork
+
+### Fixed
+- Picks replace the queue (`option: "replace"`) instead of inserting before whatever was queued, so a radio station no longer takes over after a track ends.
+- Actions sent while another is in flight are queued and run in order instead of being silently dropped (quick second key press, volume right after unmute, held volume keys).
+- Search uses a 30 s curl timeout; cold searches across all providers took 8–11 s and showed nothing.
+- Rejected actions show an OSD with the HTTP status instead of failing silently.
+- Volume key presses update the plugin's local player state so repeated presses build on each other; a press while muted only unmutes.
+- Search field focus, favorites, and player-row controls.
+
+### Added
+- Volume slider, mute button, and percent readout in the Now section (send on release, wheel steps by 5, right-click mutes).
+- `scripts/contextual-volume-control`: install to `~/.local/bin` and bind the XF86 volume keys to it with `installMediaKeys: false`. Volume keys go to Music Assistant only while its active player is playing, with an OSD naming the player; otherwise they keep Omarchy's local-audio behaviour.
+
 ## [1.0.5] - 2026-08-28
 
 ### Security

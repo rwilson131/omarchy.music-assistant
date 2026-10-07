@@ -141,10 +141,16 @@ Item {
       "hl.unbind(\"XF86AudioPrev\")",
       "hl.unbind(\"XF86AudioPlay\")",
       "hl.unbind(\"XF86AudioPause\")",
+      "hl.unbind(\"XF86AudioRaiseVolume\")",
+      "hl.unbind(\"XF86AudioLowerVolume\")",
+      "hl.unbind(\"XF86AudioMute\")",
       "o.bind(\"XF86AudioNext\", \"Music next\", \"" + ipcCmd + " nextTrack\", { locked = true })",
       "o.bind(\"XF86AudioPrev\", \"Music previous\", \"" + ipcCmd + " previousTrack\", { locked = true })",
       "o.bind(\"XF86AudioPlay\", \"Music play/pause\", \"" + ipcCmd + " playPause\", { locked = true })",
       "o.bind(\"XF86AudioPause\", \"Music play/pause\", \"" + ipcCmd + " playPause\", { locked = true })",
+      "o.bind(\"XF86AudioRaiseVolume\", \"Music volume up\", \"" + ipcCmd + " volumeUp\", { locked = true, repeating = true })",
+      "o.bind(\"XF86AudioLowerVolume\", \"Music volume down\", \"" + ipcCmd + " volumeDown\", { locked = true, repeating = true })",
+      "o.bind(\"XF86AudioMute\", \"Music mute\", \"" + ipcCmd + " toggleMute\", { locked = true })",
       mediaKeysMarkerEnd,
       ""
     ].join("\n")
@@ -485,8 +491,18 @@ Item {
 
   // ----------------------------------------------------------- action api
 
+  // One action at a time goes through actionProc; setting running = true on a
+  // busy Process does nothing, so later actions wait here instead of vanishing
+  // (e.g. a volume change right behind an unmute, or held volume keys).
+  property var pendingActions: []
+
   function runAction(command, args, onDone) {
     if (!root.ready) return
+    if (actionProc.running) {
+      if (root.pendingActions.length < 20)
+        root.pendingActions.push({ command: command, args: args, onDone: onDone })
+      return
+    }
     var payload = MaApi.buildPlayArgs(root.config.url, root.config.token, command, args)
     actionProc.authToken = payload.token || ""
     actionProc.command = [Quickshell.env("SHELL") || "/bin/bash", "-c", payload.script]
@@ -507,15 +523,40 @@ Item {
         authToken = ""
       }
     }
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.reportActionStatus(actionProc.actionCommand, String(text || "").trim())
+    }
     onExited: function(code, status) {
+      // curl exit 28 = timed out. play_media keeps going on the server
+      // (SiriusXM streams take ~20 s to start), so say so instead of failing.
+      if (code === 28 && actionCommand === "player_queues/play_media")
+        root.showOsd("Music Assistant", "media-play", "Starting… some stations take up to 20 seconds")
+      else if (code !== 0)
+        root.showOsd("Music Assistant", "dialog-warning", "Music Assistant didn't respond")
       if (root.actionOnExited) root.actionOnExited(code, status)
       if (typeof onFinished === "function") onFinished(code, status)
+      if (root.pendingActions.length > 0) {
+        var next = root.pendingActions.shift()
+        Qt.callLater(function() { root.runAction(next.command, next.args, next.onDone) })
+      }
       // schedule a quick refresh so UI picks up the new state
       if (refreshTimer) refreshTimer.restart()
     }
   }
 
   property var actionOnExited: null
+
+  // Actions print only the HTTP status. Anything but 200 means Music Assistant
+  // rejected the command (e.g. a provider that is signed out cannot play its
+  // stations); tell the user instead of silently doing nothing.
+  function reportActionStatus(command, httpCode) {
+    if (!httpCode || httpCode === "200" || httpCode === "000") return
+    var what = command === "player_queues/play_media" ? "Couldn't play that"
+      : "Command failed (" + command.split("/").pop() + ")"
+    var hint = httpCode === "500" ? " — check the provider is signed in to Music Assistant" : ""
+    root.showOsd("Music Assistant", "dialog-warning", what + hint + " [" + httpCode + "]")
+  }
 
   Timer {
     id: refreshTimer
@@ -584,18 +625,59 @@ Item {
   function setVolume(playerId, volumePercent) {
     var pid = playerId || root.activePlayerId
     var v = Math.max(0, Math.min(100, Math.round(volumePercent)))
-    root.actionForPlayer(pid, "players/cmd/volume_set", { volume_level: v })
+    root.runAction("players/cmd/volume_set", { player_id: pid, volume_level: v })
+  }
+
+  function adjustVolume(playerId, delta) {
+    var pid = playerId || root.activePlayerId
+    var p = root.playerById(pid)
+    if (!p) return
+    // A volume key while muted only unmutes, at the level from before muting,
+    // like system volume keys. Raising the hidden level would make the unmute
+    // jump loud, and a volume_set sent right behind the unmute gets dropped.
+    if (p.volume_muted) {
+      root.setMutedLocal(pid, false)
+      return
+    }
+    root.setVolumeLocal(pid, MaApi.volumePercent(p) + delta)
+  }
+
+  // Set an absolute level and record it locally, so repeated key presses or
+  // a slider drag build on the new value instead of waiting for the next
+  // two-second server poll. Setting a level while muted unmutes first, like
+  // the system volume keys do; the action queue keeps the two in order.
+  function setVolumeLocal(playerId, volumePercent) {
+    var pid = playerId || root.activePlayerId
+    var p = root.playerById(pid)
+    if (!p) return
+    var target = Math.max(0, Math.min(100, Math.round(volumePercent)))
+    if (p.volume_muted) root.setMutedLocal(pid, false)
+    p.volume_level = target
+    root.players = root.players.slice()
+    root.setVolume(pid, target)
   }
 
   function setMuted(playerId, muted) {
     var pid = playerId || root.activePlayerId
-    root.actionForPlayer(pid, "players/cmd/volume_mute", { muted: !!muted })
+    root.runAction("players/cmd/volume_mute", { player_id: pid, muted: !!muted })
+  }
+
+  // Like adjustVolume, record the new mute state locally so a second key
+  // press before the next poll toggles from it instead of the stale state.
+  function setMutedLocal(playerId, muted) {
+    var pid = playerId || root.activePlayerId
+    var p = root.playerById(pid)
+    if (p) {
+      p.volume_muted = !!muted
+      root.players = root.players.slice()
+    }
+    root.setMuted(pid, muted)
   }
 
   function toggleMute(playerId) {
     var pid = playerId || root.activePlayerId
     var p = root.playerById(pid)
-    root.setMuted(pid, !(p && p.volume_muted))
+    root.setMutedLocal(pid, !(p && p.volume_muted))
   }
 
   function transferQueue(sourceId, targetId) {
@@ -628,7 +710,10 @@ Item {
     if (!uri) return
     root.actionForPlayer(playerId, "player_queues/play_media", {
       media: uri,
-      option: "play"
+      // "replace" clears the queue first. "play" inserts at the current spot and
+      // keeps the rest, so after the pick ends the queue resumes whatever was
+      // there, and an endless radio stream (SiriusXM) then plays forever.
+      option: "replace"
     })
     root.refreshState()
   }
@@ -655,7 +740,9 @@ Item {
     var payload = MaApi.buildArgs(root.config.url, root.config.token,
       "music/search",
       { search_query: query, limit: lim, media_types: ["track", "album", "artist", "playlist"] },
-      "search-" + Date.now())
+      // Uncached searches across every provider take 8-11 s on a Home
+      // Assistant host; the default 10 s cap returned them as empty.
+      "search-" + Date.now(), "30")
     root.runMaRequest(searchProc, payload)
   }
 
@@ -894,7 +981,7 @@ Item {
 
   function power(playerId, on) {
     var pid = playerId || root.activePlayerId
-    root.actionForPlayer(pid, "players/cmd/power", { powered: !!on })
+    root.runAction("players/cmd/power", { player_id: pid, powered: !!on })
   }
 
   function addFavorite(uri) {
@@ -933,8 +1020,12 @@ Item {
   function _favFetchNext() {
     if (root._favIndex >= root._favTypes.length) return
     var t = root._favTypes[root._favIndex++]
+    // Favorites are Music Assistant library items marked favorite. There is
+    // no music/favorites/* API; query each media controller instead.
+    var controller = t === "radio" ? "radios" : t
     var payload = MaApi.buildArgs(root.config.url, root.config.token,
-      "music/favorites/" + t, { limit: 50 }, "fav-" + t)
+      "music/" + controller + "/library_items",
+      { limit: 50, favorite: true }, "fav-" + t)
     favProc.typeKey = t
     root.runMaRequest(favProc, payload)
   }
@@ -1011,6 +1102,21 @@ Item {
 
     function setVolumePct(percent: real): string {
       root.setVolume(root.activePlayerId, percent)
+      return "ok"
+    }
+
+    function volumeUp(): string {
+      root.adjustVolume(root.activePlayerId, 5)
+      return "ok"
+    }
+
+    function volumeDown(): string {
+      root.adjustVolume(root.activePlayerId, -5)
+      return "ok"
+    }
+
+    function toggleMute(): string {
+      root.toggleMute(root.activePlayerId)
       return "ok"
     }
 

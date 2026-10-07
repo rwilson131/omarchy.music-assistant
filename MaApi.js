@@ -70,12 +70,14 @@ function _buildCurlScript(url, bodyJson, maxTime, includeOutput) {
     "printf '%s' \"Authorization: Bearer ${token}\" > \"$F\"\n" +
     "curl -sS --max-time " + maxTime + " --max-filesize " + MAX_RESPONSE_BYTES + " -X POST " +
     "-H 'Content-Type: application/json' -H '@'\"$F\" " +
-    (includeOutput ? "" : "-o /dev/null ") +
+    // Without the body, print only the HTTP status so callers can report
+    // failures (Music Assistant answers errors with a non-200 status).
+    (includeOutput ? "" : "-o /dev/null -w '%{http_code}' ") +
     "'" + escapedUrl + "/api' " +
     "-d '" + escapedBody + "'\n"
 }
 
-function buildArgs(url, token, command, args, messageId) {
+function buildArgs(url, token, command, args, messageId, maxTime) {
   var body = {
     message_id: messageId !== undefined ? messageId : "omarchy-" + (counter++),
     command: command,
@@ -84,7 +86,7 @@ function buildArgs(url, token, command, args, messageId) {
   // Return an object so the caller can pipe the token over stdin instead of
   // passing it as an argv element.
   return {
-    script: _buildCurlScript(url, JSON.stringify(body), "10", true),
+    script: _buildCurlScript(url, JSON.stringify(body), maxTime || "10", true),
     token: token
   }
 }
