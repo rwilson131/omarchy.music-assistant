@@ -62,6 +62,9 @@ Item {
   property bool autoplayEnabled: false
   property bool dontStopTheMusicEnabled: false
   property bool currentFavorite: false
+  // A dynamic queue (smart shuffle, "don't stop the music", artist radio)
+  // is filled by the server and rejects shuffle/repeat changes with a 500.
+  property bool queueDynamic: false
   // Elapsed time as of the last poll, and when that was, so the progress
   // bar can advance locally between polls.
   property real queueElapsedBase: 0
@@ -552,6 +555,7 @@ Item {
     root.crossfadeEnabled = q.crossfade_enabled === true
     root.autoplayEnabled = q.autoplay_enabled === true
     root.dontStopTheMusicEnabled = q.dont_stop_the_music_enabled === true
+    root.queueDynamic = q.is_dynamic === true || q.smart_shuffle_active === true
     root.currentFavorite = root.queueInfo.current_item ? root.queueInfo.current_item.favorite : false
     // elapsed_time is as of elapsed_time_last_updated (server epoch seconds).
     // Project it to now, assuming the clocks agree, and tick locally from here.
@@ -712,9 +716,9 @@ Item {
   // stations); tell the user instead of silently doing nothing.
   function reportActionStatus(command, httpCode) {
     if (!httpCode || httpCode === "200" || httpCode === "000") return
-    var what = command === "player_queues/play_media" ? "Couldn't play that"
-      : "Command failed (" + command.split("/").pop() + ")"
-    var hint = httpCode === "500" ? " — check the provider is signed in to Music Assistant" : ""
+    var isPlay = command === "player_queues/play_media"
+    var what = isPlay ? "Couldn't play that" : "Command failed (" + command.split("/").pop() + ")"
+    var hint = isPlay && httpCode === "500" ? " — check the provider is signed in to Music Assistant" : ""
     root.showOsd("Music Assistant", "dialog-warning", what + hint + " [" + httpCode + "]")
   }
 

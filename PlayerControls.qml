@@ -22,6 +22,8 @@ Item {
   property bool isPlaying: false
   property bool shuffleEnabled: false
   property string repeatMode: "off"
+  // Shuffle and repeat cannot be changed on a server-filled (dynamic) queue.
+  property bool dynamicQueue: false
   property bool isFavorite: false
 
   signal playPause()
@@ -156,18 +158,22 @@ Item {
         }
         Button {
           iconText: root.shuffleEnabled ? "󰒟" : "󰒞"
+          tooltipText: root.dynamicQueue ? "Shuffle is fixed on a dynamic queue" : (root.shuffleEnabled ? "Shuffle on" : "Shuffle off")
           foreground: root.shuffleEnabled ? root.bar.foreground : Qt.darker(root.bar.foreground, 1.3)
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
-          opacity: root.activePlayer !== null ? 1.0 : 0.4
+          enabled: root.activePlayer !== null && !root.dynamicQueue
+          opacity: enabled ? 1.0 : 0.4
           onClicked: root.toggleShuffle()
         }
         Button {
           iconText: root.repeatMode === "one" ? "󰑘" : (root.repeatMode === "all" ? "󰑖" : "󰑗")
+          tooltipText: root.dynamicQueue ? "Repeat is fixed on a dynamic queue" : "Repeat: " + root.repeatMode
           foreground: root.repeatMode !== "off" ? root.bar.foreground : Qt.darker(root.bar.foreground, 1.3)
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
-          opacity: root.activePlayer !== null ? 1.0 : 0.4
+          enabled: root.activePlayer !== null && !root.dynamicQueue
+          opacity: enabled ? 1.0 : 0.4
           onClicked: root.cycleRepeat()
         }
         Button {

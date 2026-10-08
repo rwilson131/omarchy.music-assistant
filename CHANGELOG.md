@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Shuffle and repeat buttons toggled from stale player fields the 2.10 API no longer sends, so they could send the wrong state; they now toggle from the queue state shown in the popup.
 - `searchLimit` in `config.json` is honoured; search always asked for 20 results.
+- Shuffle and repeat are disabled (with a tooltip) while the active queue is dynamic (smart shuffle, "don't stop the music", artist radio): the server answers those changes with HTTP 500 on such queues. The failure overlay no longer suggests a provider sign-in problem for commands other than playback.
 
 ### Changed
 - Internal cleanup for publication: one `MaRequest` component replaces nine copy-pasted request processes in the service; one row delegate serves all seven search result types; favorites filters reuse the shared chip; dead properties, unused player fields and historical "fix" comments removed; files documented at the top. No user-visible change beyond the fixes above.

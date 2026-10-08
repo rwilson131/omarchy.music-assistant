@@ -479,6 +479,7 @@ BarWidget {
                   isPlaying: root.isPlaying
                   shuffleEnabled: root.service ? root.service.shuffleEnabled : false
                   repeatMode: root.service ? root.service.repeatMode : "off"
+                  dynamicQueue: root.service ? root.service.queueDynamic : false
                   isFavorite: root.service ? root.service.currentFavorite : false
                   onPlayPause: if (root.service) root.service.playPause()
                   onNext: if (root.service) root.service.next()
