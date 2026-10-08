@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.rwilson131.music-assistant",
   "name": "Music Assistant",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "author": "manologarciadev",
   "license": "MIT",
   "description": "Control Music Assistant from the Omarchy bar: now playing, transport, players and grouping, queue, search, browse, favorites, playlists and recent. Optional media-key bindings.",

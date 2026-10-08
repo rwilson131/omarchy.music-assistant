@@ -6,6 +6,9 @@ import qs.Commons
 import qs.Ui
 import "MaApi.js" as MaApi
 
+// Bar widget: the now-playing label in the bar and the popup with its eight
+// tabs. All state and actions live in Service.qml; this file only renders
+// and forwards clicks.
 BarWidget {
   id: root
   moduleName: "io.github.rwilson131.music-assistant"
@@ -26,16 +29,18 @@ BarWidget {
   readonly property int volume: service ? service.activeVolume : 100
   readonly property int duration: service ? service.activeDuration : 0
   readonly property int elapsed: service ? service.activeElapsed : 0
-  readonly property int revision: service ? service.revision : 0
 
-  // Active popup section: "now", "players", "queue", "search", "browse",
-  // "favorites", "playlists", "recent"
+  // Popup state. popupSection is one of tabOrder.
+  readonly property var tabOrder: ["now", "players", "queue", "search", "browse", "favorites", "playlists", "recent"]
   property string popupSection: "now"
   property bool popupOpen: false
+  property string searchFilter: "all"
+  property string favFilter: "tracks"
   property bool queueSaveOpen: false
   property string browseFilter: ""
 
-  readonly property var tabOrder: ["now", "players", "queue", "search", "browse", "favorites", "playlists", "recent"]
+  readonly property real maxLabelWidth: 180
+  readonly property real popupWidth: 380
 
   // Players tab order: active, playing, idle, groups, unavailable; hidden
   // players stay hidden as in the MA UI.
@@ -68,7 +73,8 @@ BarWidget {
     return items.slice(0, 200)
   }
 
-  // Small toggle/action chip used for queue options and native sources.
+  // Small toggle/action chip: queue options on the Now tab, filters on the
+  // Favorites tab.
   component Chip: BorderSurface {
     id: chip
     property string label: ""
@@ -125,10 +131,8 @@ BarWidget {
   function close() { popupOpen = false }
   function openSection(s) { popupSection = s; popupOpen = true }
 
-  // Fix: switching tabs while the popup was already open did nothing, because
-  // the per-section focus and refresh only ran from onOpenChanged. Run it from
-  // both places so the search field gets focus and the favorites, playlists
-  // and recent lists reload whichever way the section was reached.
+  // Per-tab setup, run both when the popup opens and when the tab changes:
+  // focus the search field, refresh the lists, load the browse root.
   function activatePopupSection() {
     if (!popupOpen || !service) return
     if (popupSection === "search") {
@@ -146,13 +150,11 @@ BarWidget {
     }
   }
 
-  property real maxLabelWidth: 180
-  property real popupWidth: 380
-  property string searchFilter: "all"
-  property string favFilter: "tracks"
+  // ------------------------------------------------------- bar contents
 
-  readonly property bool shouldShow: service && (service.ready || service.configError)
-  visible: shouldShow
+  // Shown once the service exists, even unconfigured, so the setup hint
+  // is visible.
+  visible: service && (service.ready || service.configError)
   implicitWidth: visible ? row.implicitWidth + Style.space(14) : 0
   implicitHeight: barSize
 
@@ -371,11 +373,10 @@ BarWidget {
           anchors.top: parent.top
           anchors.bottom: parent.bottom
           spacing: Style.space(4)
-  
+
           Repeater {
-            // Nerd Font Material Design glyphs. The originals were stale
-            // codepoints that rendered as Facebook, a flask, fast-forward,
-            // "123" and two calendars in current Nerd Fonts.
+            // Nerd Font Material Design glyphs (music, speaker, playlist-play,
+            // magnify, folder, heart, playlist-music, history).
             model: [
               { id: "now", icon: "󰝚", label: "Now" },
               { id: "players", icon: "󰓃", label: "Players" },
@@ -397,7 +398,7 @@ BarWidget {
             }
           }
         }
-  
+
         Item {
           id: popupColumn
           width: parent.width - Style.space(56)
@@ -435,7 +436,7 @@ BarWidget {
               width: contentFlick.availableWidth
               spacing: Style.space(10)
 
-                  // Connection status banner
+              // Connection status banner
               BorderSurface {
                 width: parent.width
                 visible: !root.serviceReady || !root.serviceConnected
@@ -443,7 +444,7 @@ BarWidget {
                 color: Style.selectedFillFor(root.bar.foreground, Color.accent)
                 borderSpec: Border.controlSpec("normal", root.bar.foreground, Color.accent)
                 padding: Style.space(8)
-  
+
                 Text {
                   anchors.fill: parent
                   wrapMode: Text.WordWrap
@@ -455,13 +456,13 @@ BarWidget {
                     : ("Music Assistant not configured.\n" + (root.service && root.service.configError ? root.service.configError : ""))
                 }
               }
-  
+
               // ------------------ Now section
               Column {
                 width: parent.width
                 spacing: Style.space(8)
                 visible: root.popupSection === "now"
-  
+
                 PlayerControls {
                   width: parent.width
                   bar: root.bar
@@ -534,18 +535,18 @@ BarWidget {
                   }
                 }
               }
-  
+
               // ------------------ Players section
               Column {
                 width: parent.width
                 spacing: Style.space(4)
                 visible: root.popupSection === "players"
-  
+
                 PanelSectionHeader {
                   foreground: root.bar.foreground
                   text: "PLAYERS (" + (root.service ? root.service.players.length : 0) + ")"
                 }
-  
+
                 Repeater {
                   model: root.sortedPlayers()
 
@@ -557,7 +558,6 @@ BarWidget {
                     readonly property bool available: player.available === true
                     readonly property bool playingHere: player.playback_state === "playing"
                     readonly property bool groupPlayer: player.group_members && player.group_members.length > 0
-                    readonly property int vol: MaApi.volumePercent(player)
                     readonly property string rowTitle: player.name + (groupPlayer ? " (" + player.group_members.length + ")" : "")
                     readonly property string leaderName: {
                       var lid = player.synced_to || player.active_group
@@ -579,7 +579,7 @@ BarWidget {
                       if (root.service.canGroupWithActive(player.player_id)) return "join"
                       return ""
                     }
-  
+
                     width: parent.width
                     height: rowInner.implicitHeight + Style.space(10)
                     radius: Style.spacing.labelGap
@@ -589,7 +589,7 @@ BarWidget {
                     borderSpec: isActive
                       ? Border.controlSpec("normal", root.bar.foreground, Color.accent)
                       : Border.none()
-  
+
                     Row {
                       id: rowInner
                       anchors.left: parent.left
@@ -598,7 +598,7 @@ BarWidget {
                       anchors.leftMargin: playerRow.borderLeft + Style.space(8)
                       anchors.rightMargin: playerRow.borderRight + Style.space(8)
                       spacing: Style.space(8)
-  
+
                       Text {
                         text: playingHere ? "󰏤" : (available ? "󰐊" : "󰂃")
                         color: root.bar.foreground
@@ -609,7 +609,7 @@ BarWidget {
                         anchors.verticalCenter: parent.verticalCenter
                         opacity: available ? 1.0 : 0.5
                       }
-  
+
                       Column {
                         width: parent.width - Style.space(34) - (groupBtn.visible ? groupBtn.width + Style.space(8) : 0)
                         spacing: Style.space(1)
@@ -635,7 +635,7 @@ BarWidget {
                         }
                       }
                     }
-  
+
                     MouseArea {
                       anchors.fill: parent
                       cursorShape: Qt.PointingHandCursor
@@ -690,13 +690,13 @@ BarWidget {
                   font.pixelSize: Style.font.caption
                 }
               }
-  
+
               // ------------------ Queue section
               Column {
                 width: parent.width
                 spacing: Style.space(4)
                 visible: root.popupSection === "queue"
-  
+
                 Row {
                   width: parent.width
                   Text {
@@ -748,7 +748,7 @@ BarWidget {
                     if (event.key === Qt.Key_Escape) { root.queueSaveOpen = false; event.accepted = true }
                   }
                 }
-  
+
                 Repeater {
                   model: root.service ? root.service.queue : []
                   delegate: BorderSurface {
@@ -765,7 +765,7 @@ BarWidget {
                     borderSpec: isCurrent
                       ? Border.controlSpec("normal", root.bar.foreground, Color.accent)
                       : Border.none()
-  
+
                     Row {
                       id: queueInner
                       anchors.left: parent.left
@@ -774,7 +774,7 @@ BarWidget {
                       anchors.leftMargin: queueRow.borderLeft + Style.space(8)
                       anchors.rightMargin: queueRow.borderRight + Style.space(8)
                       spacing: Style.space(8)
-  
+
                       Text {
                         text: queueRow.modelData.image_url ? "" : (queueRow.isCurrent ? "󰝚" : "")
                         color: root.bar.foreground
@@ -799,7 +799,7 @@ BarWidget {
                         spacing: Style.space(1)
                         anchors.verticalCenter: parent.verticalCenter
                         Text {
-                          text: queueRow.modelData.name || queueRow.modelData.title || queueRow.modelData.uri || "?"
+                          text: queueRow.modelData.name || queueRow.modelData.uri || "?"
                           color: root.bar.foreground
                           font.family: root.bar.fontFamily
                           font.pixelSize: Style.font.bodySmall
@@ -818,7 +818,7 @@ BarWidget {
                         }
                       }
                     }
-  
+
                     MouseArea {
                       anchors.fill: parent
                       cursorShape: Qt.PointingHandCursor
@@ -826,7 +826,7 @@ BarWidget {
                       onClicked: function(mouse) {
                         if (!root.service) return
                         if (mouse.button === Qt.RightButton) {
-                          root.service.deleteQueueItem(root.service.activePlayerId, queueRow.modelData.queue_item_id || queueRow.modelData.item_id)
+                          root.service.deleteQueueItem(root.service.activePlayerId, queueRow.modelData.queue_item_id)
                         } else {
                           root.service.playIndex(root.service.activePlayerId, queueRow.index)
                         }
@@ -886,7 +886,7 @@ BarWidget {
                     }
                   }
                 }
-  
+
                 Text {
                   text: root.service && root.service.queue.length === 0 ? "Queue is empty." : ""
                   color: Qt.darker(root.bar.foreground, 1.4)
@@ -896,13 +896,13 @@ BarWidget {
                   wrapMode: Text.WordWrap
                 }
               }
-  
+
               // ------------------ Search section
               Column {
                 width: parent.width
                 spacing: Style.space(6)
                 visible: root.popupSection === "search"
-  
+
                 TextField {
                   id: searchInput
                   width: parent.width
@@ -918,7 +918,7 @@ BarWidget {
                     }
                   }
                 }
-  
+
                 Row {
                   width: parent.width
                   Button {
@@ -945,12 +945,12 @@ BarWidget {
                     }
                   }
                 }
-  
+
                 // Filter chips
                 Flow {
                   width: parent.width
                   spacing: Style.space(4)
-  
+
                   Repeater {
                     model: {
                       if (!root.service || !root.service.searchResults) return []
@@ -967,8 +967,9 @@ BarWidget {
                         { id: "audiobook", label: "Books", count: n("audiobooks") }
                       ]
                     }
-  
+
                     delegate: BorderSurface {
+                      id: searchChip
                       required property var modelData
                       readonly property bool active: root.searchFilter === modelData.id
                       width: chipRow.implicitWidth + Style.space(12)
@@ -981,7 +982,7 @@ BarWidget {
                         ? Border.controlSpec("normal", root.bar.foreground, Color.accent)
                         : Border.controlSpec("normal", Qt.darker(root.bar.foreground, 1.4), Color.accent)
                       visible: modelData.count > 0
-  
+
                       Row {
                         id: chipRow
                         anchors.centerIn: parent
@@ -991,29 +992,26 @@ BarWidget {
                           color: root.bar.foreground
                           font.family: root.bar.fontFamily
                           font.pixelSize: Style.font.caption
-                          font.bold: parent.parent.active
+                          font.bold: searchChip.active
                           anchors.verticalCenter: parent.verticalCenter
                         }
                         Rectangle {
-                          visible: modelData.count > 0
                           anchors.verticalCenter: parent.verticalCenter
                           radius: 6
-                          color: parent.parent.active ? root.bar.foreground : Qt.darker(root.bar.foreground, 1.4)
+                          color: searchChip.active ? root.bar.foreground : Qt.darker(root.bar.foreground, 1.4)
                           implicitWidth: countLbl.implicitWidth + Style.space(6)
                           implicitHeight: countLbl.implicitHeight + 2
                           Text {
                             id: countLbl
                             anchors.centerIn: parent
                             text: modelData.count
-                            color: parent.parent.parent.parent.parent.active
-                              ? Color.popups.background
-                              : root.bar.foreground
+                            color: searchChip.active ? Color.popups.background : root.bar.foreground
                             font.family: root.bar.fontFamily
                             font.pixelSize: Style.font.caption
                           }
                         }
                       }
-  
+
                       MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
@@ -1022,105 +1020,18 @@ BarWidget {
                     }
                   }
                 }
-  
-                Component {
-                  id: trackRowDelegate
-                  SearchResultRow {
-                    required property var modelData
-                    required property int index
-                    bar: root.bar
-                    imageUrl: modelData.image_url || ""
-                    title: modelData.name || modelData.title || "?"
-                    subtitle: (modelData.artist || "") + (modelData.album ? " — " + modelData.album : "")
-                    type: MaApi.mediaTypeLabel(modelData.media_type || "track")
-                    source: MaApi.providerLabel(MaApi.providerDomain(modelData))
-                    onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
-                    onContextMenu: function(mouse) { if (root.service) root.service.enqueue(modelData.uri, "next", modelData.name) }
-                    onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)
-                  }
-                }
-  
-                Repeater {
-                  model: (root.service && root.service.searchResults && (root.searchFilter === "all" || root.searchFilter === "track")) ? root.service.searchResults.tracks : []
-                  delegate: trackRowDelegate
-                }
-  
-                Component {
-                  id: albumRowDelegate
-                  SearchResultRow {
-                    required property var modelData
-                    required property int index
-                    bar: root.bar
-                    imageUrl: modelData.image_url || ""
-                    title: modelData.name || "?"
-                    subtitle: (modelData.artist || "") + (modelData.year ? " · " + modelData.year : "")
-                    type: MaApi.mediaTypeLabel(modelData.media_type || "album")
-                    source: MaApi.providerLabel(MaApi.providerDomain(modelData))
-                    onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
-                    onContextMenu: function(mouse) { if (root.service) root.service.enqueue(modelData.uri, "next", modelData.name) }
-                    onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)
-                  }
-                }
-  
-                Repeater {
-                  model: (root.service && root.service.searchResults && (root.searchFilter === "all" || root.searchFilter === "album")) ? root.service.searchResults.albums : []
-                  delegate: albumRowDelegate
-                }
-  
-                Component {
-                  id: playlistRowDelegate
-                  SearchResultRow {
-                    required property var modelData
-                    required property int index
-                    bar: root.bar
-                    imageUrl: modelData.image_url || ""
-                    title: modelData.name || "?"
-                    subtitle: modelData.owner || ""
-                    type: MaApi.mediaTypeLabel(modelData.media_type || "playlist")
-                    source: MaApi.providerLabel(MaApi.providerDomain(modelData))
-                    onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
-                    onContextMenu: function(mouse) { if (root.service) root.service.enqueue(modelData.uri, "next", modelData.name) }
-                    onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)
-                  }
-                }
-  
-                Repeater {
-                  model: (root.service && root.service.searchResults && (root.searchFilter === "all" || root.searchFilter === "playlist")) ? root.service.searchResults.playlists : []
-                  delegate: playlistRowDelegate
-                }
-  
-                Component {
-                  id: artistRowDelegate
-                  SearchResultRow {
-                    required property var modelData
-                    required property int index
-                    bar: root.bar
-                    imageUrl: modelData.image_url || ""
-                    title: modelData.name || "?"
-                    subtitle: ""
-                    type: MaApi.mediaTypeLabel(modelData.media_type || "artist")
-                    source: MaApi.providerLabel(MaApi.providerDomain(modelData))
-                    onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
-                    onContextMenu: function(mouse) { if (root.service) root.service.enqueue(modelData.uri, "next", modelData.name) }
-                    onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)
-                  }
-                }
-  
-                Repeater {
-                  model: (root.service && root.service.searchResults && (root.searchFilter === "all" || root.searchFilter === "artist")) ? root.service.searchResults.artists : []
-                  delegate: artistRowDelegate
-                }
 
+                // One delegate for every result type: click plays, right-click
+                // plays next, middle-click adds to the end of the queue.
                 Component {
-                  id: mediaRowDelegate
+                  id: resultRowDelegate
                   SearchResultRow {
                     required property var modelData
-                    required property int index
                     bar: root.bar
                     imageUrl: modelData.image_url || ""
                     title: modelData.name || "?"
-                    subtitle: (modelData.artist || "") + (modelData.total_episodes ? " · " + modelData.total_episodes + " episodes" : "")
-                    type: MaApi.mediaTypeLabel(modelData.media_type || "")
+                    subtitle: MaApi.itemSubtitle(modelData)
+                    type: MaApi.mediaTypeLabel(modelData.media_type)
                     source: MaApi.providerLabel(MaApi.providerDomain(modelData))
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
                     onContextMenu: function(mouse) { if (root.service) root.service.enqueue(modelData.uri, "next", modelData.name) }
@@ -1129,18 +1040,20 @@ BarWidget {
                 }
 
                 Repeater {
-                  model: (root.service && root.service.searchResults && (root.searchFilter === "all" || root.searchFilter === "radio")) ? root.service.searchResults.radio : []
-                  delegate: mediaRowDelegate
+                  // [filter id, results key] in display order.
+                  model: [["track", "tracks"], ["album", "albums"], ["artist", "artists"], ["playlist", "playlists"], ["radio", "radio"], ["podcast", "podcasts"], ["audiobook", "audiobooks"]]
+                  delegate: Column {
+                    required property var modelData
+                    width: parent.width
+                    spacing: Style.space(4)
+                    Repeater {
+                      model: root.service && root.service.searchResults && (root.searchFilter === "all" || root.searchFilter === modelData[0])
+                        ? root.service.searchResults[modelData[1]] : []
+                      delegate: resultRowDelegate
+                    }
+                  }
                 }
-                Repeater {
-                  model: (root.service && root.service.searchResults && (root.searchFilter === "all" || root.searchFilter === "podcast")) ? root.service.searchResults.podcasts : []
-                  delegate: mediaRowDelegate
-                }
-                Repeater {
-                  model: (root.service && root.service.searchResults && (root.searchFilter === "all" || root.searchFilter === "audiobook")) ? root.service.searchResults.audiobooks : []
-                  delegate: mediaRowDelegate
-                }
-  
+
                 Text {
                   width: parent.width
                   wrapMode: Text.WordWrap
@@ -1157,7 +1070,7 @@ BarWidget {
                   font.pixelSize: Style.font.caption
                 }
               }
-  
+
               // ------------------ Browse section
               Column {
                 id: browseTab
@@ -1208,12 +1121,11 @@ BarWidget {
                   id: browseDelegate
                   SearchResultRow {
                     required property var modelData
-                    required property int index
                     readonly property bool folder: modelData.media_type === "folder"
                     bar: root.bar
                     imageUrl: modelData.image_url || ""
                     title: (folder ? "󰉋  " : "") + (modelData.name || "?")
-                    subtitle: folder ? "" : (modelData.artist || "") + (modelData.album ? " — " + modelData.album : "")
+                    subtitle: folder ? "" : MaApi.itemSubtitle(modelData)
                     showTypeBadge: !folder
                     type: MaApi.mediaTypeLabel(modelData.media_type || "")
                     source: folder ? "" : MaApi.providerLabel(MaApi.providerDomain(modelData))
@@ -1256,11 +1168,11 @@ BarWidget {
                 width: parent.width
                 spacing: Style.space(4)
                 visible: root.popupSection === "favorites"
-  
-                Row {
+
+                Flow {
                   width: parent.width
                   spacing: Style.space(4)
-  
+
                   Repeater {
                     model: [
                       { id: "tracks", label: "Tracks" },
@@ -1269,46 +1181,23 @@ BarWidget {
                       { id: "playlists", label: "Playlists" },
                       { id: "radio", label: "Radio" }
                     ]
-                    delegate: BorderSurface {
+                    delegate: Chip {
                       required property var modelData
-                      readonly property bool active: root.favFilter === modelData.id
-                      width: (parent.width - Style.space(16)) / 5
-                      height: Style.space(26)
-                      radius: Style.cornerRadius
-                      color: active
-                        ? Style.selectedFillFor(root.bar.foreground, Color.accent)
-                        : Style.normalFillFor(root.bar.foreground, Color.accent)
-                      borderSpec: active
-                        ? Border.controlSpec("normal", root.bar.foreground, Color.accent)
-                        : Border.controlSpec("normal", Qt.darker(root.bar.foreground, 1.4), Color.accent)
-  
-                      Text {
-                        anchors.centerIn: parent
-                        text: modelData.label
-                        color: root.bar.foreground
-                        font.family: root.bar.fontFamily
-                        font.pixelSize: Style.font.caption
-                        font.bold: parent.active
-                      }
-  
-                      MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.favFilter = modelData.id
-                      }
+                      label: modelData.label
+                      active: root.favFilter === modelData.id
+                      onClicked: root.favFilter = modelData.id
                     }
                   }
                 }
-  
+
                 Component {
                   id: favRowDelegate
                   SearchResultRow {
                     required property var modelData
-                    required property int index
                     bar: root.bar
                     imageUrl: modelData.image_url || ""
-                    title: modelData.name || modelData.title || "?"
-                    subtitle: (modelData.artist || "") + (modelData.album ? " — " + modelData.album : "") + (modelData.duration ? " · " + Math.floor(modelData.duration / 60) + " min" : "")
+                    title: modelData.name || "?"
+                    subtitle: MaApi.itemSubtitle(modelData) + (modelData.duration ? " · " + Math.floor(modelData.duration / 60) + " min" : "")
                     showTypeBadge: false
                     source: MaApi.providerLabel(MaApi.providerDomain(modelData))
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
@@ -1319,12 +1208,12 @@ BarWidget {
                     onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)
                   }
                 }
-  
+
                 Repeater {
                   model: root.service && root.service.favorites ? root.service.favorites[root.favFilter] || [] : []
                   delegate: favRowDelegate
                 }
-  
+
                 Text {
                   visible: !root.service || !root.service.favorites || !(root.service.favorites[root.favFilter] || []).length
                   width: parent.width
@@ -1335,21 +1224,20 @@ BarWidget {
                   font.pixelSize: Style.font.caption
                 }
               }
-  
+
               // ------------------ Playlists section
               Column {
                 id: playlistsTab
                 width: parent.width
                 spacing: Style.space(4)
                 visible: root.popupSection === "playlists"
-  
+
                 readonly property bool drilled: root.service && root.service.drillItem !== null
 
                 Component {
                   id: playlistDelegate
                   SearchResultRow {
                     required property var modelData
-                    required property int index
                     bar: root.bar
                     imageUrl: modelData.image_url || ""
                     title: modelData.name || "?"
@@ -1430,11 +1318,10 @@ BarWidget {
                   model: root.service && playlistsTab.drilled ? root.service.drillItems : []
                   delegate: SearchResultRow {
                     required property var modelData
-                    required property int index
                     bar: root.bar
                     imageUrl: modelData.image_url || ""
                     title: (modelData.track_number ? modelData.track_number + ". " : "") + (modelData.name || "?")
-                    subtitle: (modelData.artist || "") + (modelData.album ? " — " + modelData.album : "")
+                    subtitle: MaApi.itemSubtitle(modelData)
                     showTypeBadge: false
                     source: MaApi.providerLabel(MaApi.providerDomain(modelData))
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
@@ -1460,15 +1347,14 @@ BarWidget {
                 width: parent.width
                 spacing: Style.space(4)
                 visible: root.popupSection === "recent"
-  
+
                 Component {
                   id: recentDelegate
                   SearchResultRow {
                     required property var modelData
-                    required property int index
                     bar: root.bar
                     imageUrl: modelData.image_url || ""
-                    title: modelData.name || modelData.title || "?"
+                    title: modelData.name || "?"
                     subtitle: (modelData.artist ? modelData.artist + " · " : "") + MaApi.formatRelativeTime(modelData.last_played)
                     showTypeBadge: true
                     showSourceBadge: true
@@ -1477,12 +1363,12 @@ BarWidget {
                     onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)
                   }
                 }
-  
+
                 Repeater {
                   model: root.service ? root.service.recentItems : []
                   delegate: recentDelegate
                 }
-  
+
                 Text {
                   visible: !root.service || !root.service.recentItems || root.service.recentItems.length === 0
                   width: parent.width
@@ -1496,8 +1382,7 @@ BarWidget {
             }
           }
         }
+      }
     }
   }
 }
-}
-

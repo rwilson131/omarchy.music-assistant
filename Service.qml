@@ -6,106 +6,91 @@ import qs.Commons
 import "MaApi.js" as MaApi
 import "ConfigSchema.js" as ConfigSchema
 
+// Music Assistant service: owns the connection, the polled state, every
+// action, the media-key bindings and the IPC surface. The bar widget only
+// renders what is here and calls the functions below.
+//
+// Transport is HTTP: each call is one curl run (see MaRequest.qml and
+// MaApi.js); state is polled every pollIntervalMs as
+// players/all -> player_queues/get -> player_queues/items.
 Item {
   id: root
 
+  // The shell root, injected by Omarchy; used for OSD summons.
   property var shell: null
 
   // --------------------------------------------------------------- config
-  property var config: ({})
-  property string configError: ""
-  property bool ready: false
 
   readonly property string home: Quickshell.env("HOME") || ""
   readonly property string pluginId: "io.github.rwilson131.music-assistant"
-  readonly property string configPath: home + "/.config/omarchy/plugins/" + pluginId + "/config.json"
+  readonly property string pluginDir: home + "/.config/omarchy/plugins/" + pluginId
+  readonly property string configPath: pluginDir + "/config.json"
+  readonly property string ipcTarget: pluginId
+
+  // Parsed config.json (see ConfigSchema.js), which keys the file actually
+  // had, and whether it is usable.
+  property var config: ({})
+  property var configPresent: ({})
+  property string configError: ""
+  property bool ready: false
+  property string preferredPlayerId: ""
+
+  readonly property int pollIntervalMs: Math.max(500, config && config.pollIntervalMs ? config.pollIntervalMs : 2000)
 
   // ---------------------------------------------------------------- state
+  // Replaced wholesale on each poll; the *Revision counters let bindings
+  // that call functions re-evaluate.
+
+  property bool connected: false
+  property string lastError: ""
+  property int revision: 0
+
   property var players: []
   property string activePlayerId: ""
+
+  // The active player's queue: items from player_queues/items, and the
+  // queue object from player_queues/get, which owns the current index,
+  // shuffle/repeat/crossfade/autoplay and the elapsed time.
   property var queue: []
-  property int queuePosition: 0
   property int queueRevision: 0
-  // From player_queues/get for the active player. The queue, not the player,
-  // owns shuffle/repeat/crossfade/autoplay and the current index; items
-  // responses never carried current_item_index, so the queue tab always
-  // highlighted row 0 before.
   property var queueInfo: null
+  property int queuePosition: 0
+  property string queueState: "idle"
+  property bool shuffleEnabled: false
+  property string repeatMode: "off"
   property bool crossfadeEnabled: false
   property bool autoplayEnabled: false
   property bool dontStopTheMusicEnabled: false
-  property string queueState: "idle"
+  property bool currentFavorite: false
+  // Elapsed time as of the last poll, and when that was, so the progress
+  // bar can advance locally between polls.
   property real queueElapsedBase: 0
   property real queueElapsedAtMs: 0
-  property bool currentFavorite: false
   // Bumped once a second while something plays so elapsed-time bindings
-  // re-evaluate between the two-second polls.
+  // re-evaluate between polls.
   property int nowTick: 0
+
   property var searchResults: null
   property string searchQuery: ""
-  property string lastError: ""
-  property bool connected: false
-  property int revision: 0
-
-  // --------------------------------------------------------------- mpris
-  readonly property var mprisPlayers: Mpris.players ? Mpris.players.values : []
-  readonly property var activeMprisPlayer: root.pickActiveMprisPlayer()
-
-  function pickActiveMprisPlayer() {
-    var oldest = null
-    var oldestOrder = 0
-    var playingProxy = null
-    var proxyOrder = 0
-    for (var i = 0; i < root.mprisPlayers.length; i++) {
-      var p = root.mprisPlayers[i]
-      if (!p || !p.isPlaying) continue
-      var dbusName = String(p.dbusName || "").toLowerCase()
-      var isProxy = dbusName.indexOf("playerctld") !== -1
-      var order = i + 1000
-      if (!isProxy && (!oldest || order < oldestOrder)) {
-        oldest = p
-        oldestOrder = order
-      } else if (isProxy && (!playingProxy || order < proxyOrder)) {
-        playingProxy = p
-        proxyOrder = order
-      }
-    }
-    return oldest || playingProxy || null
-  }
-
-  function mprisRoutingEnabled() {
-    return root.config && root.config.mprisFallback !== false
-  }
-  property string preferredPlayerId: ""
+  property int searchRevision: 0
   property var favorites: ({ tracks: [], albums: [], artists: [], playlists: [], radio: [] })
   property int favoritesRevision: 0
-  property var _favTypes: []
-  property int _favIndex: 0
   property var playlists: []
   property int playlistsRevision: 0
   property var recentItems: []
   property int recentRevision: 0
 
-  readonly property int pollIntervalMs: {
-    var v = config && config.pollIntervalMs ? config.pollIntervalMs : 2000
-    return Math.max(500, v)
-  }
+  // ------------------------------------------------------- derived state
 
   readonly property var activePlayer: {
-    if (!players || players.length === 0) return null
     for (var i = 0; i < players.length; i++) {
       if (players[i].player_id === activePlayerId) return players[i]
     }
     return null
   }
 
-  readonly property var activeMedia: {
-    var p = activePlayer
-    return p && p.current_media ? p.current_media : null
-  }
-
-  readonly property bool hasMedia: activeMedia !== null && (activeMedia.title || activeMedia.uri)
-
+  readonly property var activeMedia: activePlayer && activePlayer.current_media ? activePlayer.current_media : null
+  readonly property bool hasMedia: activeMedia !== null && !!(activeMedia.title || activeMedia.uri)
   readonly property bool isPlaying: MaApi.isPlaying(activePlayer)
   readonly property bool isPaused: MaApi.isPaused(activePlayer)
   readonly property int activeVolume: MaApi.volumePercent(activePlayer)
@@ -113,16 +98,16 @@ Item {
   readonly property string activeArtist: MaApi.trackArtist(activeMedia)
   readonly property string activeAlbum: MaApi.trackAlbum(activeMedia)
   readonly property string activeImageUrl: MaApi.trackImageUrl(activeMedia)
-  // Seconds. PlayerMedia.duration / elapsed_time and PlayerQueue.elapsed_time
-  // are all seconds in the 2.10 API; the old code fed them to a formatter
-  // that expected milliseconds and showed 0:00 forever.
+
+  // Seconds; durations and elapsed times are seconds throughout the API.
   readonly property int activeDuration: {
     if (activeMedia && typeof activeMedia.duration === "number" && activeMedia.duration > 0) return Math.round(activeMedia.duration)
     if (queueInfo && queueInfo.current_item && typeof queueInfo.current_item.duration === "number") return Math.round(queueInfo.current_item.duration)
     return 0
   }
+
   readonly property int activeElapsed: {
-    var _t = nowTick
+    var _tick = nowTick
     if (!queueInfo) return activeMedia && activeMedia.elapsed_time ? Math.round(activeMedia.elapsed_time) : 0
     var e = queueElapsedBase
     if (queueState === "playing" && queueElapsedAtMs > 0) e += (Date.now() - queueElapsedAtMs) / 1000
@@ -130,11 +115,40 @@ Item {
     return Math.max(0, Math.round(e))
   }
 
+  readonly property int sleepRemainingSeconds: {
+    var _tick = nowTick
+    var p = activePlayer
+    if (!p || !p.sleep_timer_expires_at) return 0
+    return Math.max(0, Math.round(p.sleep_timer_expires_at - Date.now() / 1000))
+  }
+
   Timer {
     interval: 1000
     repeat: true
     running: root.ready && root.queueState === "playing"
     onTriggered: root.nowTick = root.nowTick + 1
+  }
+
+  // --------------------------------------------------------------- mpris
+  // With mprisFallback on, play/pause/next/previous go to a local player
+  // (browser, Spotify) while one is playing, so the media keys do what the
+  // user expects even when Music Assistant is idle.
+
+  readonly property var mprisPlayers: Mpris.players ? Mpris.players.values : []
+  readonly property var activeMprisPlayer: {
+    var proxy = null
+    for (var i = 0; i < mprisPlayers.length; i++) {
+      var p = mprisPlayers[i]
+      if (!p || !p.isPlaying) continue
+      // playerctld mirrors whichever player is active; prefer the real one.
+      if (String(p.dbusName || "").toLowerCase().indexOf("playerctld") !== -1) { if (!proxy) proxy = p }
+      else return p
+    }
+    return proxy
+  }
+
+  function mprisRoutingEnabled() {
+    return root.config && root.config.mprisFallback !== false
   }
 
   // ---------------------------------------------------------------- config loader
@@ -174,14 +188,11 @@ Item {
 
   readonly property string mediaKeysMarkerBegin: "-- BEGIN music-assistant media-keys"
   readonly property string mediaKeysMarkerEnd: "-- END music-assistant media-keys"
-  readonly property string ipcTarget: root.pluginId
-  readonly property string pluginDir: home + "/.config/omarchy/plugins/" + pluginId
   readonly property string hyprBindingsPath: home + "/.config/hypr/bindings.lua"
 
-  // The switch on the Players tab. Backed by config.json's installMediaKeys
+  // The switch in the popup header. Backed by config.json's installMediaKeys
   // so the file, the popup and the IPC call stay in step.
   readonly property bool mediaKeysEnabled: !!(root.config && root.config.installMediaKeys === true)
-  property var configPresent: ({})
 
   // Play/pause/next/previous go straight to the plugin. The volume keys go
   // through scripts/contextual-volume-control, which sends them to Music
@@ -445,15 +456,10 @@ Item {
 
   property bool pollingActive: false
   property bool pollInFlight: false
-  property bool shuffleEnabled: false
-  property string repeatMode: "off"
-  property int elapsed: 0
-  property int duration: 0
-  property var _lastSuccessAt: 0
 
   Timer {
     id: pollTimer
-    interval: root.config && root.config.pollIntervalMs ? root.config.pollIntervalMs : 2000
+    interval: root.pollIntervalMs
     repeat: true
     running: root.ready
     triggeredOnStart: true
@@ -477,56 +483,46 @@ Item {
     root.runFetchPlayers()
   }
 
-  function runMaRequest(proc, payload) {
-    if (!payload) return
-    proc.authToken = payload.token || ""
-    proc.command = [Quickshell.env("SHELL") || "/bin/bash", "-c", payload.script]
-    proc.running = true
+  function api(command, args, messageId, maxTime) {
+    return MaApi.buildArgs(root.config.url, root.config.token, command, args || {}, messageId, maxTime)
   }
 
+  // Poll step 1 of 3.
   function runFetchPlayers() {
-    if (!root.ready) { root.pollInFlight = false; return }
-    var payload = MaApi.buildArgs(root.config.url, root.config.token, "players/all", {}, "poll-players")
-    root.runMaRequest(playersProc, payload)
+    if (!root.ready || !playersRequest.send(root.api("players/all", {}, "poll-players"))) root.pollInFlight = false
   }
 
-  function runFetchQueueInfo(playerId) {
-    if (!root.ready || !playerId) { root.pollInFlight = false; return }
-    var payload = MaApi.buildArgs(root.config.url, root.config.token,
-      "player_queues/get", { queue_id: playerId }, "poll-queue-info")
-    root.runMaRequest(queueInfoProc, payload)
-  }
-
-  function runFetchQueue(playerId) {
-    if (!root.ready || !playerId) { root.pollInFlight = false; return }
-    var payload = MaApi.buildArgs(root.config.url, root.config.token,
-      "player_queues/items",
-      { queue_id: playerId, limit: 200, offset: 0 },
-      "poll-queue")
-    root.runMaRequest(queueProc, payload)
-  }
-
-  Process {
-    id: queueInfoProc
-    property string authToken: ""
-    stdinEnabled: true
-    onStarted: {
-      if (authToken.length > 0) {
-        write(authToken + "\n")
-        authToken = ""
-      }
+  MaRequest {
+    id: playersRequest
+    label: "players"
+    onFinished: function(data) {
+      if (data === null) root.lastError = "players: bad reply"
+      else root.applyPlayers(data)
+      var chosen = MaApi.pickActivePlayerId(root.players, root.preferredPlayerId)
+      if (chosen && chosen !== root.activePlayerId) root.activePlayerId = chosen
+      // Step 2 of 3.
+      if (!root.activePlayerId || !queueInfoRequest.send(root.api("player_queues/get", { queue_id: root.activePlayerId }, "poll-queue-info")))
+        root.pollInFlight = false
     }
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        try {
-          var payload = JSON.parse(String(queueInfoProc.stdout.text || "{}"))
-          root.applyQueueInfo(payload && payload.result !== undefined ? payload.result : payload)
-        } catch (e) {
-          root.lastError = "queue info parse: " + e.message
-        }
-        root.runFetchQueue(root.activePlayerId)
-      }
+  }
+
+  MaRequest {
+    id: queueInfoRequest
+    label: "queue info"
+    onFinished: function(data) {
+      root.applyQueueInfo(data)
+      // Step 3 of 3.
+      if (!root.activePlayerId || !queueRequest.send(root.api("player_queues/items", { queue_id: root.activePlayerId, limit: 200, offset: 0 }, "poll-queue")))
+        root.pollInFlight = false
+    }
+  }
+
+  MaRequest {
+    id: queueRequest
+    label: "queue"
+    onFinished: function(data) {
+      root.applyQueue(data)
+      root.pollInFlight = false
     }
   }
 
@@ -538,7 +534,6 @@ Item {
     var cur = q.current_item && typeof q.current_item === "object" ? q.current_item : null
     root.queueInfo = {
       queue_id: MaApi.boundedString(q.queue_id, 100),
-      items: typeof q.items === "number" ? q.items : 0,
       current_index: typeof q.current_index === "number" ? q.current_index : 0,
       state: MaApi.boundedString(q.state, 20),
       current_item: cur ? {
@@ -548,8 +543,7 @@ Item {
         uri: MaApi.boundedString(cur.media_item ? cur.media_item.uri : "", 2048),
         media_type: MaApi.boundedString(cur.media_item ? cur.media_item.media_type : "", 50),
         favorite: !!(cur.media_item && cur.media_item.favorite === true)
-      } : null,
-      next_name: q.next_item && q.next_item.name ? MaApi.boundedString(q.next_item.name, 500) : ""
+      } : null
     }
     root.queuePosition = root.queueInfo.current_index
     root.queueState = root.queueInfo.state || "idle"
@@ -570,67 +564,7 @@ Item {
     root.queueElapsedAtMs = Date.now()
   }
 
-  Process {
-    id: playersProc
-    property string outputText: ""
-    property string authToken: ""
-    stdinEnabled: true
-    onStarted: {
-      if (authToken.length > 0) {
-        write(authToken + "\n")
-        authToken = ""
-      }
-    }
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        var text = playersProc.stdout.text
-        try {
-          var payload = JSON.parse(String(text || "{}"))
-          root.applyPlayers(payload.result || payload)
-        } catch (e) {
-          root.lastError = "players parse: " + e.message
-        }
-        var chosen = root.pickNextActivePlayer()
-        if (chosen && chosen !== root.activePlayerId) {
-          root.activePlayerId = chosen
-        }
-        root.runFetchQueueInfo(root.activePlayerId)
-      }
-    }
-    onExited: {
-      if (root.pollInFlight && root.lastError === "") {
-        // queue fetch will reset pollInFlight
-      } else if (root.pollInFlight) {
-        root.pollInFlight = false
-      }
-    }
-  }
-
-  Process {
-    id: queueProc
-    property string authToken: ""
-    stdinEnabled: true
-    onStarted: {
-      if (authToken.length > 0) {
-        write(authToken + "\n")
-        authToken = ""
-      }
-    }
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        try {
-          var payload = JSON.parse(String(queueProc.stdout.text || "{}"))
-          root.applyQueue(payload.result || payload)
-        } catch (e) {
-          root.lastError = "queue parse: " + e.message
-        }
-        root.pollInFlight = false
-      }
-    }
-  }
-
+  // Player records keep only what the popup and the IPC surface read.
   function applyPlayers(list) {
     if (!Array.isArray(list)) {
       root.lastError = "players/all returned non-list"
@@ -645,30 +579,21 @@ Item {
         playback_state: MaApi.boundedString(p.playback_state, 20),
         volume_muted: !!p.volume_muted,
         volume_level: typeof p.volume_level === "number" ? Math.max(0, Math.min(100, p.volume_level)) : null,
-        shuffle_enabled: !!p.shuffle_enabled,
-        repeat_mode: MaApi.boundedString(p.repeat_mode, 20),
         current_media: p.current_media || null,
         group_members: Array.isArray(p.group_members) ? MaApi.boundedArray(p.group_members, 32).map(function(g) { return MaApi.boundedString(g, 100) }) : [],
         can_group_with: Array.isArray(p.can_group_with) ? MaApi.boundedArray(p.can_group_with, 64).map(function(g) { return MaApi.boundedString(g, 100) }) : [],
         hide_in_ui: !!p.hide_in_ui,
         synced_to: MaApi.boundedString(p.synced_to, 100),
         active_group: MaApi.boundedString(p.active_group, 100),
-        active_source: MaApi.boundedString(p.active_source, 200),
         type: MaApi.boundedString(p.type, 20),
         provider: MaApi.boundedString(p.provider, 100),
         group_volume: typeof p.group_volume === "number" ? Math.max(0, Math.min(100, p.group_volume)) : null,
-        sleep_timer_expires_at: typeof p.sleep_timer_expires_at === "number" ? p.sleep_timer_expires_at : 0,
-        power_control: MaApi.boundedString(p.power_control, 50),
-        supported_features: Array.isArray(p.supported_features) ? MaApi.boundedArray(p.supported_features, 32).map(function(f) { return MaApi.boundedString(f, 50) }) : [],
-        source_list: Array.isArray(p.source_list) ? MaApi.boundedArray(p.source_list, 16).map(function(src) {
-          return { id: MaApi.boundedString(src && src.id, 100), name: MaApi.boundedString(src && src.name, 100), passive: !!(src && src.passive) }
-        }) : []
+        sleep_timer_expires_at: typeof p.sleep_timer_expires_at === "number" ? p.sleep_timer_expires_at : 0
       }
     })
     root.players = bounded
     root.revision = root.revision + 1
     root.connected = true
-    root._lastSuccessAt = Date.now()
     root.lastError = ""
   }
 
@@ -700,10 +625,6 @@ Item {
     })
     root.queue = items
     root.queueRevision = root.queueRevision + 1
-  }
-
-  function pickNextActivePlayer() {
-    return MaApi.pickActivePlayerId(root.players, root.preferredPlayerId)
   }
 
   // ------------------------------------------------------------- helpers
@@ -743,7 +664,7 @@ Item {
         root.pendingActions.push({ command: command, args: args, onDone: onDone })
       return
     }
-    var payload = MaApi.buildPlayArgs(root.config.url, root.config.token, command, args)
+    var payload = MaApi.buildActionArgs(root.config.url, root.config.token, command, args)
     actionProc.authToken = payload.token || ""
     actionProc.command = [Quickshell.env("SHELL") || "/bin/bash", "-c", payload.script]
     actionProc.onFinished = onDone || null
@@ -774,7 +695,6 @@ Item {
         root.showOsd("Music Assistant", "media-play", "Starting… some stations take up to 20 seconds")
       else if (code !== 0)
         root.showOsd("Music Assistant", "dialog-warning", "Music Assistant didn't respond")
-      if (root.actionOnExited) root.actionOnExited(code, status)
       if (typeof onFinished === "function") onFinished(code, status)
       // Start the next waiting action (see pendingActions) once this Process
       // has exited; starting it from here keeps them in the order sent.
@@ -786,8 +706,6 @@ Item {
       if (refreshTimer) refreshTimer.restart()
     }
   }
-
-  property var actionOnExited: null
 
   // Actions print only the HTTP status. Anything but 200 means Music Assistant
   // rejected the command (e.g. a provider that is signed out cannot play its
@@ -807,6 +725,8 @@ Item {
     onTriggered: root.refreshState()
   }
 
+  // player_queues/* commands address the queue, whose id is the player's.
+  // players/cmd/* commands take player_id instead and call runAction() directly.
   function actionForPlayer(playerId, command, args) {
     var pid = playerId || root.activePlayerId
     var a = args ? Object.assign({}, args) : {}
@@ -822,16 +742,13 @@ Item {
       else if (mp.canTogglePlaying) mp.togglePlaying()
       return
     }
-    if (!root.activePlayer && !playerId) return
     var pid = playerId || root.activePlayerId
-    var isP = MaApi.isPlaying(root.playerById(pid))
-    if (isP) {
-      root.actionForPlayer(pid, "player_queues/pause")
-    } else {
-      root.actionForPlayer(pid, "player_queues/play")
-    }
-    root.showOsd(isP ? "Pause" : "Play", isP ? "media-pause" : "media-play",
-      (MaApi.trackTitle(root.playerById(pid).current_media) || "Music Assistant"))
+    var p = root.playerById(pid)
+    if (!p) return
+    var playing = MaApi.isPlaying(p)
+    root.actionForPlayer(pid, playing ? "player_queues/pause" : "player_queues/play")
+    root.showOsd(playing ? "Pause" : "Play", playing ? "media-pause" : "media-play",
+      MaApi.trackTitle(p.current_media) || "Music Assistant")
   }
 
   function next(playerId) {
@@ -840,7 +757,7 @@ Item {
       return
     }
     root.actionForPlayer(playerId, "player_queues/next")
-    root.showOsd("Next", "media-next", MaApi.trackTitle(root.playerById(playerId || root.activePlayerId).current_media))
+    root.showOsd("Next", "media-next", root.activeTitle)
   }
 
   function previous(playerId) {
@@ -849,7 +766,7 @@ Item {
       return
     }
     root.actionForPlayer(playerId, "player_queues/previous")
-    root.showOsd("Previous", "media-previous", MaApi.trackTitle(root.playerById(playerId || root.activePlayerId).current_media))
+    root.showOsd("Previous", "media-previous", root.activeTitle)
   }
 
   function play(playerId) {
@@ -863,9 +780,6 @@ Item {
   function setVolume(playerId, volumePercent) {
     var pid = playerId || root.activePlayerId
     var v = Math.max(0, Math.min(100, Math.round(volumePercent)))
-    // Fix: players/cmd/* commands take player_id. actionForPlayer() adds
-    // queue_id instead, which Music Assistant rejected, so volume, mute and
-    // power never reached the player.
     var p = root.playerById(pid)
     if (p && p.group_members && p.group_members.length > 0) {
       // A group leader: move the whole group, like the Music Assistant UI.
@@ -906,7 +820,6 @@ Item {
 
   function setMuted(playerId, muted) {
     var pid = playerId || root.activePlayerId
-    // player_id, not queue_id: see setVolume().
     root.runAction("players/cmd/volume_mute", { player_id: pid, muted: !!muted })
   }
 
@@ -928,30 +841,27 @@ Item {
     root.setMutedLocal(pid, !(p && p.volume_muted))
   }
 
+  // Make a player the active one and remember it in config.json so the
+  // choice survives restarts.
+  function activatePlayer(playerId) {
+    if (!root.playerById(playerId)) return
+    root.preferredPlayerId = playerId
+    root.activePlayerId = playerId
+    var cfg = Object.assign({}, root.config)
+    cfg.preferredPlayerId = playerId
+    root.config = cfg
+    root.persistConfig()
+    root.refreshState()
+  }
+
+  // Move the current queue to another player and make that one active.
   function transferQueue(sourceId, targetId) {
     root.runAction("player_queues/transfer", {
       source_queue_id: sourceId || root.activePlayerId,
       target_queue_id: targetId,
       auto_play: true
     })
-    root.preferredPlayerId = targetId
-    root.activePlayerId = targetId
-    if (root.config) {
-      root.config.preferredPlayerId = targetId
-      root.persistConfig()
-    }
-    root.refreshState()
-  }
-
-  function activatePlayer(playerId) {
-    if (!root.playerById(playerId)) return
-    root.preferredPlayerId = playerId
-    root.activePlayerId = playerId
-    if (root.config) {
-      root.config.preferredPlayerId = playerId
-      root.persistConfig()
-    }
-    root.refreshState()
+    root.activatePlayer(targetId)
   }
 
   function playUri(playerId, uri) {
@@ -972,7 +882,6 @@ Item {
   }
 
   function deleteQueueItem(playerId, itemId) {
-    // The API parameter is item_id_or_index; queue_item_id was rejected.
     root.actionForPlayer(playerId, "player_queues/delete_item", { item_id_or_index: itemId })
     root.refreshState()
   }
@@ -982,17 +891,15 @@ Item {
     root.refreshState()
   }
 
-  function search(query, limit) {
+  function search(query) {
     if (!query) return
     root.searchQuery = query
-    var lim = limit || 20
-    var payload = MaApi.buildArgs(root.config.url, root.config.token,
-      "music/search",
-      { search_query: query, limit: lim, media_types: ["track", "album", "artist", "playlist", "radio", "podcast", "audiobook"] },
-      // Uncached searches across every provider take 8-11 s on a Home
-      // Assistant host; the default 10 s cap returned them as empty.
-      "search-" + Date.now(), "30")
-    root.runMaRequest(searchProc, payload)
+    // Uncached searches across every provider can take 10 s; allow 30.
+    searchRequest.send(root.api("music/search", {
+      search_query: query,
+      limit: root.config.searchLimit || 20,
+      media_types: ["track", "album", "artist", "playlist", "radio", "podcast", "audiobook"]
+    }, "search-" + Date.now(), "30"))
   }
 
   function clearSearch() {
@@ -1000,142 +907,92 @@ Item {
     root.searchQuery = ""
   }
 
-  function _boundMediaItem(it) {
-    return MaApi.mapMediaItem(it, root.config.url)
+  function mapItems(list, max) {
+    return MaApi.boundedArray(Array.isArray(list) ? list : [], max)
+      .map(function(it) { return MaApi.mapMediaItem(it, root.config.url) })
+      .filter(function(x) { return x !== null })
   }
 
-  function _boundList(list, max) {
-    return MaApi.boundedArray(Array.isArray(list) ? list : [], max).map(_boundMediaItem).filter(function(x) { return x !== null })
-  }
-
-  function _boundSearchResults(raw) {
-    if (!raw || typeof raw !== "object") return null
-    return {
-      tracks: _boundList(raw.tracks, MaApi.MAX_SEARCH_TRACKS),
-      albums: _boundList(raw.albums, MaApi.MAX_SEARCH_ALBUMS),
-      artists: _boundList(raw.artists, MaApi.MAX_SEARCH_ARTISTS),
-      playlists: _boundList(raw.playlists, MaApi.MAX_SEARCH_PLAYLISTS),
-      radio: _boundList(raw.radio, MaApi.MAX_SEARCH_TRACKS),
-      podcasts: _boundList(raw.podcasts, MaApi.MAX_SEARCH_ALBUMS),
-      audiobooks: _boundList(raw.audiobooks, MaApi.MAX_SEARCH_ALBUMS)
-    }
-  }
-
-  Process {
-    id: searchProc
-    property string authToken: ""
-    stdinEnabled: true
-    onStarted: {
-      if (authToken.length > 0) {
-        write(authToken + "\n")
-        authToken = ""
+  MaRequest {
+    id: searchRequest
+    label: "search"
+    onFinished: function(data) {
+      if (!data || typeof data !== "object") return
+      root.searchResults = {
+        tracks: root.mapItems(data.tracks, MaApi.MAX_SEARCH_TRACKS),
+        albums: root.mapItems(data.albums, MaApi.MAX_SEARCH_ALBUMS),
+        artists: root.mapItems(data.artists, MaApi.MAX_SEARCH_ARTISTS),
+        playlists: root.mapItems(data.playlists, MaApi.MAX_SEARCH_PLAYLISTS),
+        radio: root.mapItems(data.radio, MaApi.MAX_SEARCH_TRACKS),
+        podcasts: root.mapItems(data.podcasts, MaApi.MAX_SEARCH_ALBUMS),
+        audiobooks: root.mapItems(data.audiobooks, MaApi.MAX_SEARCH_ALBUMS)
       }
-    }
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        try {
-          var payload = JSON.parse(String(searchProc.stdout.text || "{}"))
-          var bounded = _boundSearchResults(payload.result || payload)
-          root.searchResults = bounded || root.searchResults
-          root.searchRevision = root.searchRevision + 1
-        } catch (e) {
-          root.lastError = "search parse: " + e.message
-        }
-      }
+      root.searchRevision = root.searchRevision + 1
     }
   }
 
-  Process {
-    id: favProc
-    property string authToken: ""
-    property string typeKey: ""
-    stdinEnabled: true
-    onStarted: {
-      if (authToken.length > 0) {
-        write(authToken + "\n")
-        authToken = ""
-      }
-    }
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        try {
-          var payload = JSON.parse(String(favProc.stdout.text || "{}"))
-          var list = payload.result || payload || []
-          var bounded = MaApi.boundedArray(list, MaApi.MAX_FAVORITES_PER_TYPE).map(_boundMediaItem).filter(function(x) { return x !== null })
-          var next = Object.assign({}, root.favorites)
-          next[favProc.typeKey] = bounded
-          root.favorites = next
-          root.favoritesRevision = root.favoritesRevision + 1
-        } catch (e) {
-          root.lastError = "favorites parse: " + e.message
-        }
-        root._favFetchNext()
-      }
+  // Favorites are library items flagged favorite, fetched per media
+  // controller one after another (there is no single favorites listing).
+  readonly property var favoriteTypes: ["tracks", "albums", "artists", "playlists", "radio"]
+
+  function refreshFavorites() {
+    if (!root.ready) return
+    root.fetchFavorites(0)
+  }
+
+  function fetchFavorites(index) {
+    if (index >= root.favoriteTypes.length) return
+    var type = root.favoriteTypes[index]
+    var controller = type === "radio" ? "radios" : type
+    favoritesRequest.send(root.api("music/" + controller + "/library_items", { limit: 50, favorite: true }, "fav-" + type),
+      { type: type, index: index })
+  }
+
+  MaRequest {
+    id: favoritesRequest
+    label: "favorites"
+    onFinished: function(data, ctx) {
+      var next = Object.assign({}, root.favorites)
+      next[ctx.type] = root.mapItems(data, MaApi.MAX_FAVORITES_PER_TYPE)
+      root.favorites = next
+      root.favoritesRevision = root.favoritesRevision + 1
+      root.fetchFavorites(ctx.index + 1)
     }
   }
 
-  Process {
-    id: playlistsProc
-    property string authToken: ""
-    stdinEnabled: true
-    onStarted: {
-      if (authToken.length > 0) {
-        write(authToken + "\n")
-        authToken = ""
-      }
-    }
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        try {
-          var payload = JSON.parse(String(playlistsProc.stdout.text || "{}"))
-          var list = Array.isArray(payload.result) ? payload.result : (Array.isArray(payload) ? payload : [])
-          root.playlists = MaApi.boundedArray(list, MaApi.MAX_PLAYLISTS).map(_boundMediaItem).filter(function(x) { return x !== null })
-          root.playlistsRevision = root.playlistsRevision + 1
-        } catch (e) {
-          root.lastError = "playlists parse: " + e.message
-        }
-      }
+  function refreshPlaylists() {
+    if (!root.ready) return
+    playlistsRequest.send(root.api("music/playlists/library_items", { limit: 100 }, "playlists"))
+  }
+
+  MaRequest {
+    id: playlistsRequest
+    label: "playlists"
+    onFinished: function(data) {
+      root.playlists = root.mapItems(data, MaApi.MAX_PLAYLISTS)
+      root.playlistsRevision = root.playlistsRevision + 1
     }
   }
 
-  Process {
-    id: recentProc
-    property string authToken: ""
-    stdinEnabled: true
-    onStarted: {
-      if (authToken.length > 0) {
-        write(authToken + "\n")
-        authToken = ""
-      }
-    }
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        try {
-          var payload = JSON.parse(String(recentProc.stdout.text || "{}"))
-          // The server answers with a bare list, not {result: [...]}.
-          var list = Array.isArray(payload) ? payload : (Array.isArray(payload.result) ? payload.result : [])
-          root.recentItems = MaApi.boundedArray(list, MaApi.MAX_RECENT_ITEMS).map(function(it) {
-            var m = MaApi.mapMediaItem(it, root.config.url)
-            if (!m) return null
-            m.last_played = typeof it.last_played === "number" ? it.last_played : (typeof it.timestamp === "number" ? it.timestamp : null)
-            return m
-          }).filter(function(x) { return x !== null })
-          root.recentRevision = root.recentRevision + 1
-        } catch (e) {
-          root.lastError = "recent parse: " + e.message
-        }
-      }
+  function refreshRecent() {
+    if (!root.ready) return
+    recentRequest.send(root.api("music/recently_played_items", { limit: root.config.recentLimit || 50 }, "recent"))
+  }
+
+  MaRequest {
+    id: recentRequest
+    label: "recent"
+    onFinished: function(data) {
+      root.recentItems = MaApi.boundedArray(Array.isArray(data) ? data : [], MaApi.MAX_RECENT_ITEMS).map(function(it) {
+        var m = MaApi.mapMediaItem(it, root.config.url)
+        if (m) m.last_played = typeof it.last_played === "number" ? it.last_played : null
+        return m
+      }).filter(function(x) { return x !== null })
+      root.recentRevision = root.recentRevision + 1
     }
   }
 
-  property int searchRevision: 0
-
-  // Seconds. player_queues/seek takes `position` in seconds; the old
-  // position_ms argument was unknown to the server.
+  // Seconds; player_queues/seek takes `position` in seconds.
   function seek(playerId, positionSeconds) {
     var pid = playerId || root.activePlayerId
     if (!pid) return
@@ -1149,27 +1006,24 @@ Item {
     root.seek(root.activePlayerId, root.activeElapsed + deltaSeconds)
   }
 
-  function toggleShuffle(playerId) {
-    var pid = playerId || root.activePlayerId
-    var p = root.playerById(pid)
-    if (!p) return
-    var next = !(p.shuffle_enabled === true)
-    root.actionForPlayer(pid, "player_queues/shuffle", { shuffle_enabled: next })
+  // Shuffle and repeat are queue state (applyQueueInfo), so these act on
+  // the active player's queue.
+  function toggleShuffle() {
+    if (!root.activePlayerId) return
+    var next = !root.shuffleEnabled
+    root.actionForPlayer(root.activePlayerId, "player_queues/shuffle", { shuffle_enabled: next })
     root.shuffleEnabled = next
   }
 
-  function cycleRepeat(playerId) {
-    var pid = playerId || root.activePlayerId
-    var p = root.playerById(pid)
-    var cur = p && p.repeat_mode ? String(p.repeat_mode) : "off"
-    var next = cur === "off" ? "all" : (cur === "all" ? "one" : "off")
-    root.actionForPlayer(pid, "player_queues/repeat", { repeat_mode: next })
+  function cycleRepeat() {
+    if (!root.activePlayerId) return
+    var next = root.repeatMode === "off" ? "all" : (root.repeatMode === "all" ? "one" : "off")
+    root.actionForPlayer(root.activePlayerId, "player_queues/repeat", { repeat_mode: next })
     root.repeatMode = next
   }
 
   function power(playerId, on) {
     var pid = playerId || root.activePlayerId
-    // player_id, not queue_id: see setVolume().
     root.runAction("players/cmd/power", { player_id: pid, powered: !!on })
   }
 
@@ -1206,55 +1060,17 @@ Item {
     root.showOsd("Favorited", "favorite", root.activeTitle)
   }
 
+  // Open the web UI (openWebUiPath, else the server url) in the default
+  // browser; argv form, no shell, http(s) only.
   function openWebUI() {
     var url = root.config.openWebUiPath && root.config.openWebUiPath.length > 0
       ? root.config.openWebUiPath : root.config.url
-    // shell.summon() opens shell plugins by id, so summon("browser", url)
-    // silently did nothing. Launch the default browser the way the shell's
-    // Tailscale panel does; argv form, no shell, http(s) only.
     if (!/^https?:\/\//.test(String(url || ""))) return
     Quickshell.execDetached(["omarchy-launch-browser", String(url)])
   }
 
-  function refreshFavorites() {
-    if (!root.ready) return
-    root._favTypes = ["tracks", "albums", "artists", "playlists", "radio"]
-    root._favIndex = 0
-    root._favFetchNext()
-  }
-
-  function _favFetchNext() {
-    if (root._favIndex >= root._favTypes.length) return
-    var t = root._favTypes[root._favIndex++]
-    // Favorites are Music Assistant library items marked favorite. There is
-    // no music/favorites/* API; query each media controller instead.
-    var controller = t === "radio" ? "radios" : t
-    var payload = MaApi.buildArgs(root.config.url, root.config.token,
-      "music/" + controller + "/library_items",
-      { limit: 50, favorite: true }, "fav-" + t)
-    favProc.typeKey = t
-    root.runMaRequest(favProc, payload)
-  }
-
-  function refreshPlaylists() {
-    if (!root.ready) return
-    var payload = MaApi.buildArgs(root.config.url, root.config.token,
-      // music/playlists/all is not a command in 2.10; library_items is.
-      "music/playlists/library_items", { limit: 100 }, "playlists")
-    root.runMaRequest(playlistsProc, payload)
-  }
-
-  function refreshRecent() {
-    if (!root.ready) return
-    var payload = MaApi.buildArgs(root.config.url, root.config.token,
-      "music/recently_played_items", { limit: root.config.recentLimit || 50 }, "recent")
-    root.runMaRequest(recentProc, payload)
-  }
-
   function saveQueueAsPlaylist(name) {
     if (!name || !root.queue || root.queue.length === 0) return
-    // 2.10 has a native command for this; the old create-then-add dance sent
-    // the wrong playlist id field and never populated the playlist.
     root.runAction("player_queues/save_as_playlist", { queue_id: root.activePlayerId, name: String(name) }, function() {
       root.refreshPlaylists()
     })
@@ -1304,27 +1120,6 @@ Item {
       root.runAction("players/sleep_timer/clear", { player_id: pid })
       root.showOsd("Sleep timer", "media-pause", "Cleared")
     }
-  }
-
-  readonly property int sleepRemainingSeconds: {
-    var _t = nowTick
-    var p = activePlayer
-    if (!p || !p.sleep_timer_expires_at) return 0
-    return Math.max(0, Math.round(p.sleep_timer_expires_at - Date.now() / 1000))
-  }
-
-  // Native input on the player (Sonos line-in / TV, ...). Null returns to
-  // the Music Assistant queue.
-  function selectSource(sourceId) {
-    if (!root.activePlayerId) return
-    root.runAction("players/cmd/select_source", { player_id: root.activePlayerId, source: sourceId || null })
-  }
-
-  function togglePower(playerId) {
-    var pid = playerId || root.activePlayerId
-    var p = root.playerById(pid)
-    if (!p) return
-    root.power(pid, !p.powered)
   }
 
   // ---------------------------------------------------------- queue edits
@@ -1407,11 +1202,8 @@ Item {
   function browse(path, name) {
     if (!root.ready) return
     root.browseLoading = true
-    browseProc.pendingPath = path || ""
-    browseProc.pendingName = name || "Music Assistant"
-    var args = path ? { path: path } : {}
-    root.runMaRequest(browseProc, MaApi.buildArgs(root.config.url, root.config.token,
-      "music/browse", args, "browse-" + Date.now(), "30"))
+    browseRequest.send(root.api("music/browse", path ? { path: path } : {}, "browse-" + Date.now(), "30"),
+      { path: path || "", name: name || "Music Assistant" })
   }
 
   function browseInto(item) {
@@ -1430,41 +1222,24 @@ Item {
     root.browse(prev.path, prev.name)
   }
 
-  Process {
-    id: browseProc
-    property string authToken: ""
-    property string pendingPath: ""
-    property string pendingName: ""
-    stdinEnabled: true
-    onStarted: {
-      if (authToken.length > 0) {
-        write(authToken + "\n")
-        authToken = ""
-      }
-    }
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        try {
-          var payload = JSON.parse(String(browseProc.stdout.text || "[]"))
-          var list = Array.isArray(payload) ? payload : (Array.isArray(payload.result) ? payload.result : [])
-          root.browseItems = root._boundList(list.filter(function(it) {
-            return it && it.name !== ".." && !(it.media_type === "folder" && it.path === "root")
-          }), MaApi.MAX_QUEUE_ITEMS)
-          root.browsePath = browseProc.pendingPath
-          root.browseName = browseProc.pendingName
-          root.browseRevision = root.browseRevision + 1
-        } catch (e) {
-          root.lastError = "browse parse: " + e.message
-        }
-        root.browseLoading = false
-      }
+  MaRequest {
+    id: browseRequest
+    label: "browse"
+    onFinished: function(data, ctx) {
+      var list = Array.isArray(data) ? data : []
+      root.browseItems = root.mapItems(list.filter(function(it) {
+        return it && it.name !== ".." && !(it.media_type === "folder" && it.path === "root")
+      }), MaApi.MAX_QUEUE_ITEMS)
+      root.browsePath = ctx.path
+      root.browseName = ctx.name
+      root.browseRevision = root.browseRevision + 1
+      root.browseLoading = false
     }
   }
 
   // ------------------------------------------------- collection drill-down
-  // Tracks of a playlist, album or artist, shown inside the Lists / Favorites
-  // tabs with a Back button.
+  // Tracks of a playlist, album or artist, shown inside the Lists tab with
+  // a Back button.
 
   property var drillItems: []
   property var drillItem: null
@@ -1481,8 +1256,7 @@ Item {
     root.drillItem = item
     root.drillItems = []
     root.drillLoading = true
-    root.runMaRequest(drillProc, MaApi.buildArgs(root.config.url, root.config.token, cmd,
-      { item_id: item.item_id, provider_instance_id_or_domain: item.provider }, "drill-" + Date.now(), "30"))
+    drillRequest.send(root.api(cmd, { item_id: item.item_id, provider_instance_id_or_domain: item.provider }, "drill-" + Date.now(), "30"))
     return true
   }
 
@@ -1492,29 +1266,13 @@ Item {
     root.drillLoading = false
   }
 
-  Process {
-    id: drillProc
-    property string authToken: ""
-    stdinEnabled: true
-    onStarted: {
-      if (authToken.length > 0) {
-        write(authToken + "\n")
-        authToken = ""
-      }
-    }
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        try {
-          var payload = JSON.parse(String(drillProc.stdout.text || "[]"))
-          var list = Array.isArray(payload) ? payload : (Array.isArray(payload.result) ? payload.result : [])
-          root.drillItems = root._boundList(list, MaApi.MAX_QUEUE_ITEMS)
-          root.drillRevision = root.drillRevision + 1
-        } catch (e) {
-          root.lastError = "collection parse: " + e.message
-        }
-        root.drillLoading = false
-      }
+  MaRequest {
+    id: drillRequest
+    label: "collection"
+    onFinished: function(data) {
+      root.drillItems = root.mapItems(data, MaApi.MAX_QUEUE_ITEMS)
+      root.drillRevision = root.drillRevision + 1
+      root.drillLoading = false
     }
   }
 
@@ -1559,7 +1317,6 @@ Item {
         repeat: root.repeatMode,
         elapsed: root.activeElapsed,
         duration: root.activeDuration,
-        pollingState: root.pollingActive ? "active" : "stopped",
         pollingActive: root.pollingActive,
         queueState: root.queueState,
         queueIndex: root.queuePosition,
@@ -1589,9 +1346,8 @@ Item {
       return "ok"
     }
 
-    // Volume keys. Bound either by the installed media-keys block or by
-    // scripts/contextual-volume-control, which calls these over IPC only
-    // while the active player is playing.
+    // Called by scripts/contextual-volume-control while the active player
+    // is playing.
     function volumeUp(): string {
       root.adjustVolume(root.activePlayerId, 5)
       return "ok"
@@ -1673,12 +1429,12 @@ Item {
     }
 
     function toggleShuffle(): string {
-      root.toggleShuffle(root.activePlayerId)
+      root.toggleShuffle()
       return "ok"
     }
 
     function cycleRepeat(): string {
-      root.cycleRepeat(root.activePlayerId)
+      root.cycleRepeat()
       return "ok"
     }
 

@@ -171,8 +171,7 @@ Item {
           onClicked: root.cycleRepeat()
         }
         Button {
-          // Heart / heart-outline. The original off-state codepoint drew a
-          // battery-with-bluetooth glyph in current Nerd Fonts.
+          // Heart (favorited) / heart outline.
           iconText: root.isFavorite ? "󰋑" : "󰋕"
           foreground: root.isFavorite ? root.bar.foreground : Qt.darker(root.bar.foreground, 1.3)
           horizontalPadding: Style.spacing.controlPaddingX
@@ -198,8 +197,8 @@ Item {
         value: root.elapsed
         bar: root.bar
         enabled: root.duration > 0
-        // Fix: Qt 6 deprecates injected signal parameters ("Parameter value is
-        // not declared" warning on every load); declare it explicitly.
+        // Explicit handler parameter: Qt 6 warns about injected signal
+        // parameters.
         onMoved: function(value) { root.seek(value) }
       }
 

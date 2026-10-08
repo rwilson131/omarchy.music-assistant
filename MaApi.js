@@ -76,8 +76,8 @@ function _buildCurlScript(url, bodyJson, maxTime, includeOutput) {
     "-d '" + escapedBody + "'\n"
 }
 
-// Fix: maxTime lets a caller raise the 10 s curl cap for a slow command.
-// search() passes "30"; everything else keeps the default.
+// Script + token for a command whose reply the caller wants. maxTime (seconds,
+// default 10) is the curl cap; search and browse pass 30.
 function buildArgs(url, token, command, args, messageId, maxTime) {
   var body = {
     message_id: messageId !== undefined ? messageId : "omarchy-" + (counter++),
@@ -92,7 +92,8 @@ function buildArgs(url, token, command, args, messageId, maxTime) {
   }
 }
 
-function buildPlayArgs(url, token, command, args, messageId) {
+// Script + token for an action; the reply is only the HTTP status.
+function buildActionArgs(url, token, command, args, messageId) {
   var body = {
     message_id: messageId !== undefined ? messageId : "omarchy-play-" + (counter++),
     command: command,
@@ -223,10 +224,9 @@ function mediaTypeLabel(t) {
 
 // ---------------------------------------------------------------------------
 // Media item helpers for the Music Assistant 2.10 wire format. Items carry
-// `artists` (list of objects), `album` (object), `image` (object with a
-// `path` that may be provider-relative) and `metadata.images`; the old code
-// read flat `artist`, `album` and `image_url` strings that are not there, so
-// favorites, playlists, search and queue rows showed no artist or artwork.
+// `artists` (a list of objects), `album` (an object), `image` (an object
+// whose `path` may be provider-relative) and `metadata.images`; these
+// flatten them into the strings the rows render.
 
 function itemArtist(it) {
   if (!it) return ""
@@ -274,6 +274,18 @@ function itemImageUrl(it, serverUrl) {
   if (im.provider === "builtin") return ""
   return safeImageUrl(serverUrl + "/imageproxy?path=" + encodeURIComponent(path)
     + "&provider=" + encodeURIComponent(im.provider || "") + "&size=128", 2048)
+}
+
+// "Artist — Album" style second line for a list row.
+function itemSubtitle(it) {
+  if (!it) return ""
+  var parts = []
+  if (it.artist) parts.push(it.artist)
+  if (it.album) parts.push(it.album)
+  var s = parts.join(" — ")
+  if (it.year) s += (s ? " · " : "") + it.year
+  if (it.total_episodes) s += (s ? " · " : "") + it.total_episodes + " episodes"
+  return s
 }
 
 // One bounded, flat record for every list in the popup (search, favorites,

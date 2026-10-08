@@ -5,6 +5,15 @@ All notable changes to this plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-10-07
+
+### Fixed
+- Shuffle and repeat buttons toggled from stale player fields the 2.10 API no longer sends, so they could send the wrong state; they now toggle from the queue state shown in the popup.
+- `searchLimit` in `config.json` is honoured; search always asked for 20 results.
+
+### Changed
+- Internal cleanup for publication: one `MaRequest` component replaces nine copy-pasted request processes in the service; one row delegate serves all seven search result types; favorites filters reuse the shared chip; dead properties, unused player fields and historical "fix" comments removed; files documented at the top. No user-visible change beyond the fixes above.
+
 ## [1.1.1] - 2026-10-07
 
 ### Added
