@@ -154,12 +154,18 @@ BarWidget {
 
   // -------------------------------------------------- popup
 
-  PopupCard {
+  // KeyboardPanel rather than PopupCard: PopupCard is an xdg-popup of the
+  // bar, and the bar never takes keyboard focus, so nothing typed ever
+  // reached the search field (or the Tab / Ctrl+N / Space shortcuts).
+  // KeyboardPanel is the shell's layer-shell popup that primes keyboard
+  // focus on open; its API matches what this widget used from PopupCard.
+  KeyboardPanel {
     id: popup
     anchorItem: root
     bar: root.bar
     owner: root
     open: root.popupOpen
+    focusTarget: popupFocus
     contentWidth: popup.fittedContentWidth(Style.space(root.popupWidth))
     contentHeight: popup.fittedContentHeight(Math.max(sidebar.implicitHeight, 320), 560)
 
