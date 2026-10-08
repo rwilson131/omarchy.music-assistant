@@ -37,15 +37,6 @@ BarWidget {
 
   readonly property var tabOrder: ["now", "players", "queue", "search", "browse", "favorites", "playlists", "recent"]
 
-  // True while the active player plays one of its native inputs (Sonos
-  // line-in / TV) instead of the Music Assistant queue.
-  readonly property bool nativeSourceActive: {
-    var p = activePlayer
-    if (!p || !p.source_list) return false
-    for (var i = 0; i < p.source_list.length; i++) if (p.source_list[i].id === p.active_source) return true
-    return false
-  }
-
   // Players tab order: active, playing, idle, groups, unavailable; hidden
   // players stay hidden as in the MA UI.
   function sortedPlayers() {
@@ -514,38 +505,6 @@ BarWidget {
                     onClicked: root.service.stop(root.service.activePlayerId)
                   }
                 }
-
-                // Native inputs of the player (Sonos line-in / TV ...).
-                // "Queue" hands control back to Music Assistant.
-                Flow {
-                  width: parent.width
-                  spacing: Style.space(4)
-                  visible: root.serviceReady && root.activePlayer && root.activePlayer.source_list && root.activePlayer.source_list.length > 0
-
-                  Text {
-                    text: "SOURCE"
-                    color: Qt.darker(root.bar.foreground, 1.3)
-                    font.family: root.bar.fontFamily
-                    font.pixelSize: Style.font.caption
-                    font.bold: true
-                    height: Style.space(24)
-                    verticalAlignment: Text.AlignVCenter
-                  }
-                  Chip {
-                    label: "Queue"
-                    active: !root.nativeSourceActive
-                    onClicked: root.service.selectSource(null)
-                  }
-                  Repeater {
-                    model: root.activePlayer && root.activePlayer.source_list ? root.activePlayer.source_list : []
-                    delegate: Chip {
-                      required property var modelData
-                      label: modelData.name
-                      active: root.activePlayer ? root.activePlayer.active_source === modelData.id : false
-                      onClicked: root.service.selectSource(modelData.id)
-                    }
-                  }
-                }
               }
   
               // ------------------ Players section
@@ -906,6 +865,7 @@ BarWidget {
                   font.family: root.bar.fontFamily
                   font.pixelSize: Style.font.caption
                   width: parent.width
+                  wrapMode: Text.WordWrap
                 }
               }
   
@@ -1155,6 +1115,7 @@ BarWidget {
   
                 Text {
                   width: parent.width
+                  wrapMode: Text.WordWrap
                   text: {
                     if (!root.service) return ""
                     var r = root.service.searchResults
@@ -1339,6 +1300,7 @@ BarWidget {
                 Text {
                   visible: !root.service || !root.service.favorites || !(root.service.favorites[root.favFilter] || []).length
                   width: parent.width
+                  wrapMode: Text.WordWrap
                   text: root.service ? "No " + root.favFilter + " favorites yet. Right-click a favorite to remove it; middle-click adds it to the queue." : "Loading…"
                   color: Qt.darker(root.bar.foreground, 1.4)
                   font.family: root.bar.fontFamily
@@ -1383,6 +1345,7 @@ BarWidget {
                 Text {
                   visible: !playlistsTab.drilled && (!root.service || !root.service.playlists || root.service.playlists.length === 0)
                   width: parent.width
+                  wrapMode: Text.WordWrap
                   text: root.service ? "No playlists found." : "Loading…"
                   color: Qt.darker(root.bar.foreground, 1.4)
                   font.family: root.bar.fontFamily
@@ -1455,6 +1418,7 @@ BarWidget {
                 Text {
                   visible: playlistsTab.drilled && root.service && !root.service.drillLoading && root.service.drillItems.length === 0
                   width: parent.width
+                  wrapMode: Text.WordWrap
                   text: "No tracks."
                   color: Qt.darker(root.bar.foreground, 1.4)
                   font.family: root.bar.fontFamily
@@ -1494,6 +1458,7 @@ BarWidget {
                 Text {
                   visible: !root.service || !root.service.recentItems || root.service.recentItems.length === 0
                   width: parent.width
+                  wrapMode: Text.WordWrap
                   text: root.service ? "No recent items." : "Loading…"
                   color: Qt.darker(root.bar.foreground, 1.4)
                   font.family: root.bar.fontFamily

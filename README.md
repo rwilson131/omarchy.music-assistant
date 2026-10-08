@@ -35,7 +35,7 @@ omarchy plugin add https://github.com/manologarciadev/music-assistant.git --enab
 
 - Live now-playing in the bar with auto-scrolling label
 - Popup with 8 tabs: Now, Players, Queue, Search, Browse, Favorites, Playlists, Recent
-- Queue options (crossfade, autoplay, don't stop the music), sleep timer, stop, native sources
+- Queue options (crossfade, autoplay, don't stop the music), sleep timer, stop
 - Speaker grouping (join / leave / ungroup with the active player), group volume
 - Queue reordering and save-as-playlist; playlist drill-down; play-next / add-to-queue on every row
 - Transport: play/pause, next/previous, seek (click progress bar)

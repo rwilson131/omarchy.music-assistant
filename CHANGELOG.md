@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Browse tab**: walks the server's provider tree (`music/browse`) with Back, a filter box for long folders (SiriusXM lists 459 channels) and play / play-next / add on items.
-- **Queue options** on the Now tab: Crossfade, Autoplay and Don't-stop-the-music toggles, a sleep timer chip (15 → 30 → 60 → 90 min → off, shows minutes left), Stop, and the player's native sources (Sonos line-in / TV) with a Queue chip to hand control back to Music Assistant.
+- **Queue options** on the Now tab: Crossfade, Autoplay and Don't-stop-the-music toggles, a sleep timer chip (15 → 30 → 60 → 90 min → off, shows minutes left) and Stop.
 - **Grouping** on the Players tab: Join / Leave group speakers with the active player, Ungroup on the active leader (`players/cmd/set_members`, `ungroup`). Rows show "grouped with …"; the list is sorted active → playing → idle → groups → unavailable and hides players hidden in the MA UI. The volume slider moves the group volume when the active player leads a group.
 - **Queue editing**: move up / down / to end and remove buttons per row; Save asks for a name and uses `player_queues/save_as_playlist`.
 - **Lists drill-down**: click a playlist to see its tracks with Play all; right-click a library playlist to add the playing track to it; middle-click queues it. Albums and artists open the same way from the service.
