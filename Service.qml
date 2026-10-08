@@ -718,10 +718,12 @@ Item {
   function runAction(command, args, onDone) {
     if (!root.ready) return
     if (actionProc.running) {
-      // A new pick supersedes any pick still waiting: replaying every click
-      // made while the server was slow sent the Sonos four play requests in
-      // six seconds and wedged its session.
-      if (command === "player_queues/play_media")
+      // A new play-now pick (option "replace") supersedes older pending media
+      // picks: replaying every click while the server was slow wedged a Sonos
+      // session. Enqueue actions ("next" and "add") must not coalesce, because
+      // each represents a distinct item the user asked to keep in the queue.
+      var replacesQueue = command === "player_queues/play_media" && args && args.option === "replace"
+      if (replacesQueue)
         root.pendingActions = root.pendingActions.filter(function(a) { return a.command !== "player_queues/play_media" })
       if (root.pendingActions.length < 20)
         root.pendingActions.push({ command: command, args: args, onDone: onDone })
