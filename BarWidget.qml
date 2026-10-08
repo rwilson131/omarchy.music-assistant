@@ -225,11 +225,9 @@ BarWidget {
         fontFamily: root.bar.fontFamily
         iconOpacity: root.serviceConnected ? 1.0 : 0.5
         iconComponent: Component {
-          Text {
-            text: "󰝚"
+          MaIcon {
+            iconSize: Style.font.display
             color: root.bar.foreground
-            font.family: root.bar.fontFamily
-            font.pixelSize: Style.font.display
           }
         }
       }

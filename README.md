@@ -225,3 +225,9 @@ from before this fix, run once:
 ```sh
 chmod 600 ~/.config/omarchy/plugins/io.github.manologarciadev.music-assistant/config.json
 ```
+
+## Credits
+
+The Music Assistant mark in the popup header (`MaIcon.qml`) is drawn from the path in
+[music-assistant/frontend](https://github.com/music-assistant/frontend) `public/favicon.svg`, Apache-2.0.
+Music Assistant is a project of the Open Home Foundation; this plugin is not affiliated with it.
