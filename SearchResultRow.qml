@@ -18,6 +18,7 @@ BorderSurface {
 
   signal clicked()
   signal contextMenu(var mouse)
+  signal middleClicked()
 
   width: parent ? parent.width : 0
   height: row.implicitHeight + Style.space(8)
@@ -130,9 +131,10 @@ BorderSurface {
   MouseArea {
     anchors.fill: parent
     cursorShape: Qt.PointingHandCursor
-    acceptedButtons: Qt.LeftButton | Qt.RightButton
+    acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
     onClicked: function(mouse) {
       if (mouse.button === Qt.RightButton) root.contextMenu(mouse)
+      else if (mouse.button === Qt.MiddleButton) root.middleClicked()
       else root.clicked()
     }
   }

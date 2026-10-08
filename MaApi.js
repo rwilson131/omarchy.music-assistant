@@ -128,7 +128,11 @@ function displayName(player) {
 }
 
 function volumePercent(player) {
-  if (!player || player.volume_level === undefined || player.volume_level === null) return 100
+  if (!player) return 100
+  // A group leader shows and sets the group volume, as the MA UI does.
+  if (player.group_members && player.group_members.length > 0 && typeof player.group_volume === "number")
+    return Math.round(player.group_volume)
+  if (player.volume_level === undefined || player.volume_level === null) return 100
   return Math.round(player.volume_level)
 }
 
@@ -287,6 +291,8 @@ function itemImageUrl(it, serverUrl) {
   var path = String(im.path)
   if (/^https?:\/\//i.test(path)) return safeImageUrl(path, 2048)
   if (!serverUrl) return ""
+  // The built-in provider's bundled images (logo.png) are not proxyable.
+  if (im.provider === "builtin") return ""
   return safeImageUrl(serverUrl + "/imageproxy?path=" + encodeURIComponent(path)
     + "&provider=" + encodeURIComponent(im.provider || "") + "&size=128", 2048)
 }

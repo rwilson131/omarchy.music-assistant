@@ -757,6 +757,12 @@ Item {
     // Fix: players/cmd/* commands take player_id. actionForPlayer() adds
     // queue_id instead, which Music Assistant rejected, so volume, mute and
     // power never reached the player.
+    var p = root.playerById(pid)
+    if (p && p.group_members && p.group_members.length > 0) {
+      // A group leader: move the whole group, like the Music Assistant UI.
+      root.runAction("players/cmd/group_volume", { player_id: pid, volume_level: v })
+      return
+    }
     root.runAction("players/cmd/volume_set", { player_id: pid, volume_level: v })
   }
 
@@ -1196,6 +1202,278 @@ Item {
     root.showOsd("Saved", "playlist", "Queue saved as \"" + name + "\"")
   }
 
+  // ------------------------------------------------------- queue options
+
+  function stop(playerId) {
+    root.actionForPlayer(playerId, "player_queues/stop")
+    root.showOsd("Stop", "media-stop", root.activeTitle || "Music Assistant")
+  }
+
+  function skip(seconds) {
+    if (!root.activePlayerId) return
+    root.actionForPlayer(root.activePlayerId, "player_queues/skip", { seconds: Math.round(seconds) })
+    root.queueElapsedBase = Math.max(0, root.activeElapsed + seconds)
+    root.queueElapsedAtMs = Date.now()
+  }
+
+  function setCrossfade(on) {
+    if (!root.activePlayerId) return
+    root.actionForPlayer(root.activePlayerId, "player_queues/crossfade", { crossfade_enabled: !!on })
+    root.crossfadeEnabled = !!on
+  }
+
+  function setAutoplay(on) {
+    if (!root.activePlayerId) return
+    root.actionForPlayer(root.activePlayerId, "player_queues/autoplay", { autoplay_enabled: !!on })
+    root.autoplayEnabled = !!on
+  }
+
+  function setDontStopTheMusic(on) {
+    if (!root.activePlayerId) return
+    root.actionForPlayer(root.activePlayerId, "player_queues/dont_stop_the_music", { dont_stop_the_music_enabled: !!on })
+    root.dontStopTheMusicEnabled = !!on
+  }
+
+  // Sleep timer on the active player; seconds <= 0 clears it.
+  function setSleepTimer(seconds) {
+    var pid = root.activePlayerId
+    if (!pid) return
+    if (seconds > 0) {
+      root.runAction("players/sleep_timer/set", { player_id: pid, seconds: Math.round(seconds) })
+      root.showOsd("Sleep timer", "media-pause", "Stops in " + Math.round(seconds / 60) + " min")
+    } else {
+      root.runAction("players/sleep_timer/clear", { player_id: pid })
+      root.showOsd("Sleep timer", "media-pause", "Cleared")
+    }
+  }
+
+  readonly property int sleepRemainingSeconds: {
+    var _t = nowTick
+    var p = activePlayer
+    if (!p || !p.sleep_timer_expires_at) return 0
+    return Math.max(0, Math.round(p.sleep_timer_expires_at - Date.now() / 1000))
+  }
+
+  // Native input on the player (Sonos line-in / TV, ...). Null returns to
+  // the Music Assistant queue.
+  function selectSource(sourceId) {
+    if (!root.activePlayerId) return
+    root.runAction("players/cmd/select_source", { player_id: root.activePlayerId, source: sourceId || null })
+  }
+
+  function togglePower(playerId) {
+    var pid = playerId || root.activePlayerId
+    var p = root.playerById(pid)
+    if (!p) return
+    root.power(pid, !p.powered)
+  }
+
+  // ---------------------------------------------------------- queue edits
+
+  function moveQueueItem(itemId, shift) {
+    if (!itemId || !shift) return
+    root.actionForPlayer(root.activePlayerId, "player_queues/move_item", { queue_item_id: itemId, pos_shift: shift })
+  }
+
+  function moveQueueItemEnd(itemId) {
+    if (!itemId) return
+    root.actionForPlayer(root.activePlayerId, "player_queues/move_item_end", { queue_item_id: itemId })
+  }
+
+  // option: "next" (after the current item) or "add" (end of the queue).
+  function enqueue(uri, option, label) {
+    if (!uri) return
+    var opt = option === "next" ? "next" : "add"
+    root.actionForPlayer(root.activePlayerId, "player_queues/play_media", { media: uri, option: opt })
+    root.showOsd(opt === "next" ? "Playing next" : "Added to queue", "playlist", label || uri)
+  }
+
+  // ------------------------------------------------------------ grouping
+  // Grouping is always relative to the active player: other players join
+  // it or leave it. The server validates against can_group_with.
+
+  function isGroupedWithActive(playerId) {
+    var a = root.activePlayer
+    if (!a || !playerId || playerId === a.player_id) return false
+    if (a.group_members && a.group_members.indexOf(playerId) !== -1) return true
+    var p = root.playerById(playerId)
+    return !!p && (p.synced_to === a.player_id || p.active_group === a.player_id)
+  }
+
+  function canGroupWithActive(playerId) {
+    var a = root.activePlayer
+    return !!a && !!playerId && playerId !== a.player_id && Array.isArray(a.can_group_with) && a.can_group_with.indexOf(playerId) !== -1
+  }
+
+  function groupAdd(childId) {
+    var target = root.activePlayerId
+    if (!target || !childId || childId === target) return
+    var child = root.playerById(childId)
+    root.runAction("players/cmd/set_members", { target_player: target, player_ids_to_add: [childId] })
+    root.showOsd("Grouped", "speaker", (child ? child.name : childId) + " joins " + (root.activePlayer ? root.activePlayer.name : "the group"))
+  }
+
+  function groupRemove(childId) {
+    var target = root.activePlayerId
+    if (!target || !childId) return
+    var child = root.playerById(childId)
+    root.runAction("players/cmd/set_members", { target_player: target, player_ids_to_remove: [childId] })
+    root.showOsd("Ungrouped", "speaker", (child ? child.name : childId) + " leaves the group")
+  }
+
+  function ungroup(playerId) {
+    var pid = playerId || root.activePlayerId
+    if (!pid) return
+    root.runAction("players/cmd/ungroup", { player_id: pid })
+    root.showOsd("Ungrouped", "speaker", (root.playerById(pid) || {}).name || "")
+  }
+
+  // -------------------------------------------------------------- browse
+  // music/browse walks the provider tree: no path lists the providers, a
+  // folder's `path` lists its children (the first child ".." points back up
+  // and is dropped; the popup keeps its own stack instead).
+
+  property var browseItems: []
+  property var browseStack: []
+  property string browsePath: ""
+  property string browseName: "Music Assistant"
+  property bool browseLoading: false
+  property int browseRevision: 0
+
+  function browseRoot() {
+    root.browseStack = []
+    root.browse("", "Music Assistant")
+  }
+
+  function browse(path, name) {
+    if (!root.ready) return
+    root.browseLoading = true
+    browseProc.pendingPath = path || ""
+    browseProc.pendingName = name || "Music Assistant"
+    var args = path ? { path: path } : {}
+    root.runMaRequest(browseProc, MaApi.buildArgs(root.config.url, root.config.token,
+      "music/browse", args, "browse-" + Date.now(), "30"))
+  }
+
+  function browseInto(item) {
+    if (!item) return
+    var stack = root.browseStack.slice()
+    stack.push({ path: root.browsePath, name: root.browseName })
+    root.browseStack = stack
+    root.browse(item.path || item.uri, item.name)
+  }
+
+  function browseBack() {
+    if (root.browseStack.length === 0) return
+    var stack = root.browseStack.slice()
+    var prev = stack.pop()
+    root.browseStack = stack
+    root.browse(prev.path, prev.name)
+  }
+
+  Process {
+    id: browseProc
+    property string authToken: ""
+    property string pendingPath: ""
+    property string pendingName: ""
+    stdinEnabled: true
+    onStarted: {
+      if (authToken.length > 0) {
+        write(authToken + "\n")
+        authToken = ""
+      }
+    }
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try {
+          var payload = JSON.parse(String(browseProc.stdout.text || "[]"))
+          var list = Array.isArray(payload) ? payload : (Array.isArray(payload.result) ? payload.result : [])
+          root.browseItems = root._boundList(list.filter(function(it) {
+            return it && it.name !== ".." && !(it.media_type === "folder" && it.path === "root")
+          }), MaApi.MAX_QUEUE_ITEMS)
+          root.browsePath = browseProc.pendingPath
+          root.browseName = browseProc.pendingName
+          root.browseRevision = root.browseRevision + 1
+        } catch (e) {
+          root.lastError = "browse parse: " + e.message
+        }
+        root.browseLoading = false
+      }
+    }
+  }
+
+  // ------------------------------------------------- collection drill-down
+  // Tracks of a playlist, album or artist, shown inside the Lists / Favorites
+  // tabs with a Back button.
+
+  property var drillItems: []
+  property var drillItem: null
+  property bool drillLoading: false
+  property int drillRevision: 0
+
+  function openCollection(item) {
+    if (!item || !item.item_id || !item.provider) return false
+    var cmd = item.media_type === "playlist" ? "music/playlists/playlist_tracks"
+      : item.media_type === "album" ? "music/albums/album_tracks"
+      : item.media_type === "artist" ? "music/artists/artist_tracks"
+      : ""
+    if (!cmd) return false
+    root.drillItem = item
+    root.drillItems = []
+    root.drillLoading = true
+    root.runMaRequest(drillProc, MaApi.buildArgs(root.config.url, root.config.token, cmd,
+      { item_id: item.item_id, provider_instance_id_or_domain: item.provider }, "drill-" + Date.now(), "30"))
+    return true
+  }
+
+  function closeCollection() {
+    root.drillItem = null
+    root.drillItems = []
+    root.drillLoading = false
+  }
+
+  Process {
+    id: drillProc
+    property string authToken: ""
+    stdinEnabled: true
+    onStarted: {
+      if (authToken.length > 0) {
+        write(authToken + "\n")
+        authToken = ""
+      }
+    }
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try {
+          var payload = JSON.parse(String(drillProc.stdout.text || "[]"))
+          var list = Array.isArray(payload) ? payload : (Array.isArray(payload.result) ? payload.result : [])
+          root.drillItems = root._boundList(list, MaApi.MAX_QUEUE_ITEMS)
+          root.drillRevision = root.drillRevision + 1
+        } catch (e) {
+          root.lastError = "collection parse: " + e.message
+        }
+        root.drillLoading = false
+      }
+    }
+  }
+
+  // Add a track to one of the library's own playlists (provider "library").
+  function addToPlaylist(playlistItem, uri, label) {
+    if (!playlistItem || playlistItem.provider !== "library" || !uri) {
+      root.showOsd("Music Assistant", "dialog-warning", "Only library playlists can be edited here")
+      return
+    }
+    root.runAction("music/playlists/add_playlist_tracks", { db_playlist_id: playlistItem.item_id, uris: [uri] })
+    root.showOsd("Added to playlist", "playlist", (label || "Track") + " → " + playlistItem.name)
+  }
+
+  function addCurrentToPlaylist(playlistItem) {
+    var uri = root.queueInfo && root.queueInfo.current_item ? root.queueInfo.current_item.uri : (root.activeMedia ? root.activeMedia.uri : "")
+    root.addToPlaylist(playlistItem, uri, root.activeTitle)
+  }
+
   // ---------------------------------------------------------------- IPC
 
   IpcHandler {
@@ -1388,6 +1666,57 @@ Item {
     function refreshRecent(): string {
       root.refreshRecent()
       return "ok"
+    }
+
+    function stop(): string {
+      root.stop(root.activePlayerId)
+      return "ok"
+    }
+
+    function skipSeconds(seconds: real): string {
+      root.skip(seconds)
+      return "ok"
+    }
+
+    function toggleCrossfade(): string {
+      root.setCrossfade(!root.crossfadeEnabled)
+      return "ok"
+    }
+
+    function toggleAutoplay(): string {
+      root.setAutoplay(!root.autoplayEnabled)
+      return "ok"
+    }
+
+    // minutes <= 0 clears the timer.
+    function sleepTimer(minutes: real): string {
+      root.setSleepTimer(minutes * 60)
+      return "ok"
+    }
+
+    function enqueueUri(uri: string, option: string): string {
+      root.enqueue(uri, option, uri)
+      return "ok"
+    }
+
+    function groupJoin(playerId: string): string {
+      root.groupAdd(playerId)
+      return "ok"
+    }
+
+    function groupLeave(playerId: string): string {
+      root.groupRemove(playerId)
+      return "ok"
+    }
+
+    function browse(path: string): string {
+      if (path === "") root.browseRoot()
+      else root.browse(path, path)
+      return "ok"
+    }
+
+    function browseSnapshot(): string {
+      return JSON.stringify({ path: root.browsePath, name: root.browseName, depth: root.browseStack.length, loading: root.browseLoading, count: root.browseItems.length, items: root.browseItems.slice(0, 5) })
     }
 
     // Counts plus the first row of every list, for scripts and debugging.
