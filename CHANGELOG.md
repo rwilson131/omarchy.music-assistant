@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tab icons use current Nerd Font Material Design codepoints (music, speaker, playlist-play, magnify, heart, playlist-music, history). The old codepoints rendered as Facebook, a flask, fast-forward, "123" and two calendars.
 
 ### Fixed
+- The favorite button's off state drew a battery-with-bluetooth glyph (stale codepoint); it is now a heart outline.
 - Typing in the Search field (and the popup's Tab / Ctrl+1–7 / Space shortcuts) now works. The popup was a `PopupCard`, an xdg-popup of the bar window, which never takes keyboard focus; it is now a `KeyboardPanel`, the shell's layer-shell popup that primes keyboard focus when it opens.
 - Picks replace the queue (`option: "replace"`) instead of inserting before whatever was queued, so a radio station no longer takes over after a track ends.
 - Actions sent while another is in flight are queued and run in order instead of being silently dropped (quick second key press, volume right after unmute, held volume keys).

@@ -168,7 +168,9 @@ Item {
           onClicked: root.cycleRepeat()
         }
         Button {
-          iconText: root.isFavorite ? "󰣐" : "󰥂"
+          // Heart / heart-outline. The original off-state codepoint drew a
+          // battery-with-bluetooth glyph in current Nerd Fonts.
+          iconText: root.isFavorite ? "󰋑" : "󰋕"
           foreground: root.isFavorite ? root.bar.foreground : Qt.darker(root.bar.foreground, 1.3)
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
