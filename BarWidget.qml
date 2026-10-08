@@ -218,14 +218,17 @@ BarWidget {
           spacing: Style.space(4)
   
           Repeater {
+            // Nerd Font Material Design glyphs. The originals were stale
+            // codepoints that rendered as Facebook, a flask, fast-forward,
+            // "123" and two calendars in current Nerd Fonts.
             model: [
-              { id: "now", icon: "", label: "Now" },
-              { id: "players", icon: "", label: "Players" },
-              { id: "queue", icon: "", label: "Queue" },
-              { id: "search", icon: "", label: "Search" },
-              { id: "favorites", icon: "󰎠", label: "Favs" },
-              { id: "playlists", icon: "󰃶", label: "Lists" },
-              { id: "recent", icon: "󰃭", label: "Recent" }
+              { id: "now", icon: "󰝚", label: "Now" },
+              { id: "players", icon: "󰓃", label: "Players" },
+              { id: "queue", icon: "󰐐", label: "Queue" },
+              { id: "search", icon: "󰍉", label: "Search" },
+              { id: "favorites", icon: "󰋑", label: "Favs" },
+              { id: "playlists", icon: "󰲸", label: "Lists" },
+              { id: "recent", icon: "󰋚", label: "Recent" }
             ]
             delegate: TabIcon {
               required property var modelData
