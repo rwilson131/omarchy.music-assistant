@@ -167,7 +167,7 @@ BarWidget {
     open: root.popupOpen
     focusTarget: popupFocus
     contentWidth: popup.fittedContentWidth(Style.space(root.popupWidth))
-    contentHeight: popup.fittedContentHeight(Math.max(sidebar.implicitHeight, 320), 560)
+    contentHeight: popup.fittedContentHeight(hero.implicitHeight + Style.space(21) + Math.max(sidebar.implicitHeight, 320), 620)
 
     onOpenChanged: {
       if (open && root.service && typeof root.service.refreshState === "function") {
@@ -208,10 +208,46 @@ BarWidget {
         }
       }
 
+      // Header in the style of the shell's own panels (see Tailscale):
+      // glyph, title, and a status line for the active player.
+      PanelHero {
+        id: hero
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        title: "Music Assistant"
+        meta: !root.serviceReady ? "Not configured"
+          : !root.serviceConnected ? "Connecting…"
+          : root.activePlayer
+            ? (root.activePlayer.name || "Player") + (root.isPlaying ? " · Playing" : (root.hasMedia ? " · Paused" : " · Idle"))
+            : "No player selected"
+        foreground: root.bar.foreground
+        fontFamily: root.bar.fontFamily
+        iconOpacity: root.serviceConnected ? 1.0 : 0.5
+        iconComponent: Component {
+          Text {
+            text: "󰝚"
+            color: root.bar.foreground
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.display
+          }
+        }
+      }
+
+      PanelSeparator {
+        id: heroRule
+        anchors.top: hero.bottom
+        anchors.topMargin: Style.space(10)
+        anchors.left: parent.left
+        anchors.right: parent.right
+        foreground: root.bar.foreground
+      }
+
       Row {
         id: popupRow
         height: 320
-        anchors.top: parent.top
+        anchors.top: heroRule.bottom
+        anchors.topMargin: Style.space(10)
         anchors.left: parent.left
         anchors.right: parent.right
         spacing: Style.space(8)
