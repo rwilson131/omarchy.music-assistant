@@ -28,6 +28,14 @@ omarchy plugin add https://github.com/rwilson131/omarchy.music-assistant.git --e
 3. Add the widget to the bar (see below). The plugin picks the config up
    within a few seconds; `omarchy restart shell` is not needed.
 
+If `omarchy plugin add --enable` ends with "omarchy-shell is not responding",
+the shell was still busy loading the plugin when the CLI gave up. The plugin
+is installed; enable it with:
+
+```sh
+omarchy plugin enable io.github.rwilson131.music-assistant right
+```
+
 ### Config keys
 
 | Key | Default | Meaning |
