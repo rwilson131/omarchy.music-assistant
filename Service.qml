@@ -688,9 +688,13 @@ Item {
         authToken = ""
       }
     }
+    property string httpCode: ""
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.reportActionStatus(actionProc.actionCommand, String(text || "").trim())
+      onStreamFinished: {
+        actionProc.httpCode = String(text || "").trim()
+        root.reportActionStatus(actionProc.actionCommand, actionProc.httpCode)
+      }
     }
     onExited: function(code, status) {
       // curl exit 28 = timed out. play_media keeps going on the server
@@ -699,7 +703,7 @@ Item {
         root.showOsd("Music Assistant", "media-play", "Starting… some stations take up to 20 seconds")
       else if (code !== 0)
         root.showOsd("Music Assistant", "dialog-warning", "Music Assistant didn't respond")
-      if (typeof onFinished === "function") onFinished(code, status)
+      if (typeof onFinished === "function") onFinished(code, status, httpCode)
       // Start the next waiting action (see pendingActions) once this Process
       // has exited; starting it from here keeps them in the order sent.
       if (root.pendingActions.length > 0) {
@@ -716,6 +720,7 @@ Item {
   // stations); tell the user instead of silently doing nothing.
   function reportActionStatus(command, httpCode) {
     if (!httpCode || httpCode === "200" || httpCode === "000") return
+    console.warn("[music-assistant] " + command + " -> HTTP " + httpCode)
     var isPlay = command === "player_queues/play_media"
     var what = isPlay ? "Couldn't play that" : "Command failed (" + command.split("/").pop() + ")"
     var hint = isPlay && httpCode === "500" ? " — check the provider is signed in to Music Assistant" : ""
@@ -1073,12 +1078,26 @@ Item {
     Quickshell.execDetached(["omarchy-launch-browser", String(url)])
   }
 
+  // The server answers with a background task; the playlist exists a few
+  // seconds later, so the list is refreshed twice after a successful reply.
   function saveQueueAsPlaylist(name) {
     if (!name || !root.queue || root.queue.length === 0) return
-    root.runAction("player_queues/save_as_playlist", { queue_id: root.activePlayerId, name: String(name) }, function() {
-      root.refreshPlaylists()
+    root.runAction("player_queues/save_as_playlist", { queue_id: root.activePlayerId, name: String(name) }, function(code, status, httpCode) {
+      if (httpCode !== "200") return
+      root.showOsd("Saved", "playlist", "Queue saved as \"" + name + "\"")
+      playlistsRefreshTimer.restart()
     })
-    root.showOsd("Saved", "playlist", "Queue saved as \"" + name + "\"")
+  }
+
+  Timer {
+    id: playlistsRefreshTimer
+    interval: 2500
+    repeat: true
+    property int runs: 0
+    onTriggered: {
+      root.refreshPlaylists()
+      if (++runs >= 3) { runs = 0; stop() }
+    }
   }
 
   // ------------------------------------------------------- queue options
