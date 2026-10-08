@@ -1,241 +1,177 @@
 # Music Assistant plugin for Omarchy
 
-Talks to a [Music Assistant](https://music-assistant.io/) server over its
-JSON-RPC API and exposes a bar widget plus OSD actions, keybindings, and CLI
-control.
+Control a [Music Assistant](https://music-assistant.io/) server from the
+Omarchy bar: now playing with transport and volume, every player with
+grouping, the queue, search, a library browser, favorites, playlists and
+recently played. Talks to the server over its JSON API and also exposes an
+IPC surface for keybindings and scripts.
+
+This is the [rwilson131](https://github.com/rwilson131/omarchy.music-assistant)
+fork of the plugin originally written by
+[manologarciadev](https://github.com/manologarciadev/omarchy.music-assistant).
+See [Credits](#credits). Tested against Music Assistant 2.10.5 and Omarchy 4.0.
 
 ## Setup
 
 ```sh
-omarchy plugin add https://github.com/manologarciadev/music-assistant.git --enable
+omarchy plugin add https://github.com/rwilson131/omarchy.music-assistant.git --enable
 ```
 
 1. In Music Assistant go to **Settings → Profile** and create a long-lived
    access token.
-2. Copy `config.example.json` to `config.json` in this same directory and
-   edit `url` and `token`:
-   ```json
-   {
-     "url": "http://192.168.1.1:8095",
-     "token": "eyJhbGciOi...",
-     "pollIntervalMs": 2000,
-     "preferredPlayerId": ""
-   }
-   ```
-   After saving, restrict permissions since the token grants admin access:
-
-   ```bash
+2. Copy `config.example.json` to `config.json` in the plugin directory
+   (`~/.config/omarchy/plugins/io.github.manologarciadev.music-assistant/`)
+   and set `url` and `token`. The token grants admin access, so:
+   ```sh
    chmod 600 config.json
    ```
-3. The plugin is auto-discovered. Either restart the shell
-   (`omarchy restart shell`) or save `~/.config/omarchy/shell.json` after
-   adding the widget.
+3. Add the widget to the bar (see below) or run `omarchy restart shell`.
 
-## Features
+### Config keys
 
-- Live now-playing in the bar with auto-scrolling label
-- Popup with 8 tabs: Now, Players, Queue, Search, Browse, Favorites, Playlists, Recent
-- Queue options (crossfade, autoplay, don't stop the music), sleep timer, stop
-- Speaker grouping (join / leave / ungroup with the active player), group volume
-- Queue reordering and save-as-playlist; playlist drill-down; play-next / add-to-queue on every row
-- Transport: play/pause, next/previous, seek (click progress bar)
-- Shuffle and repeat (off / all / one) toggles
-- Per-player volume slider with mute toggle
-- Transfer queue between players with single click
-- Search across tracks, albums, artists, playlists, and radio
-- Favorites: browse and play liked items, right-click to remove
-- Playlists: list user playlists, click to play
-- Recent: browse recently played items with relative timestamps
-- "Save queue as playlist" from the Queue tab
-- HTTP polling for live state (2s default interval)
-- IPC handlers for all actions (see table below)
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `url` | — | Server URL, e.g. `http://192.168.1.52:8095` |
+| `token` | — | Long-lived access token |
+| `preferredPlayerId` | `""` | Player to control by default; updated when you pick one in the popup |
+| `pollIntervalMs` | `2000` | State poll interval |
+| `searchLimit` | `20` | Results per media type |
+| `recentLimit` | `50` | Items in the Recent tab |
+| `showSourceBadge` | `true` | Provider badge on list rows |
+| `openWebUiPath` | `""` | URL the globe button opens; defaults to `url` |
+| `installMediaKeys` | `true` | Install Hyprland media-key bindings on first run (see below) |
+| `mprisFallback` | `true` | Route play/pause/next to a playing MPRIS player (browser, Spotify) instead of Music Assistant |
 
 ## Bar widget
 
 Add to the bar layout in `~/.config/omarchy/shell.json`:
 
 ```jsonc
-{
-  "id": "io.github.manologarciadev.music-assistant",
-  "section": "right"   // or "left" / "center"
-}
+{ "id": "io.github.manologarciadev.music-assistant", "section": "right" }
 ```
 
-- Left-click: play / pause the active player
-- Middle-click: next track
-- Right-click: open popup
-- Wheel: previous / next
-- Right-click popup tabs:
-  - **Now** — now-playing card, transport, volume slider
-  - **Players** — every MA player; click to transfer the current queue,
-    right-click to toggle mute
-  - **Queue** — current queue with click-to-play and right-click-to-remove
-  - **Search** — text search across tracks/albums/artists/playlists, click
-    a result to play it on the active player
-  - **Favorites** — browse and play liked items; right-click to remove
-  - **Playlists** — list user playlists; click to play
-  - **Recent** — recently played items with relative timestamps
+In the bar: left-click play/pause, middle-click next, right-click opens the
+popup, wheel skips previous/next. The label scrolls when the title is long.
 
-## IPC
+## The popup
 
-The service registers an `IpcHandler` under `target: "io.github.manologarciadev.music-assistant"` so
-other shell components (or external scripts) can call it:
+A header shows the active player and its state. Eight tabs down the side:
 
-### Transport
+| Tab | What it does |
+|-----|--------------|
+| **Now** | Artwork, title, transport (previous, play/pause, next, shuffle, repeat, favorite, web UI), progress bar (click to seek), volume slider and mute. Chips for Crossfade, Autoplay, Don't stop the music, a sleep timer (click cycles 15 → 30 → 60 → 90 min → off) and Stop. |
+| **Players** | Every player, sorted active → playing → idle → groups → unavailable. Click makes a player active and moves the queue to it; right-click mutes. **Join** groups a speaker with the active player, **Leave** removes it, **Ungroup** dissolves the active player's group. The volume slider moves the group when the active player leads one. |
+| **Queue** | Click plays an item, right-click removes it. Per-row buttons move it up, down, to the end, or remove it. **Save** names the queue as a new playlist; **Clear** empties it. |
+| **Search** | Searches tracks, albums, artists, playlists, radio, podcasts and audiobooks, with a filter chip per type. |
+| **Browse** | Walks the server's providers and folders (SiriusXM channels, Pandora stations, local files, …). Folders open, items play. A filter box appears for long folders. |
+| **Favorites** | Favorited tracks, albums, artists, playlists and radio. Right-click removes a favorite. |
+| **Lists** | Library playlists. Click opens the playlist's tracks with **Play all**; right-click adds the playing track to a library playlist. |
+| **Recent** | Recently played items with when they were played. |
 
-| Method | Description |
-|--------|-------------|
-| `status` | JSON snapshot of the active player and connection state |
-| `playPause`, `nextTrack`, `previousTrack` | Transport on active player |
-| `seek(positionMs)` | Seek to absolute position in current track |
-| `seekRelative(deltaMs)` | Seek relative to current position |
+On every list row, **click plays now**, **right-click plays next** and
+**middle-click adds to the end of the queue** (favorites use right-click to
+remove instead). Album, artist and playlist rows play the whole collection.
 
-### Players
-
-| Method | Description |
-|--------|-------------|
-| `setVolumePct(percent)` | Set volume 0–100 |
-| `power(action)` | `"on"` or `"off"` for the active player |
-| `activatePlayerById(playerId)` | Switch active player without transferring queue |
-| `transferQueueTo(targetId)` | Transfer the queue from the active player to another |
-| `playersList()` | JSON list of every player with playback state |
-
-### Queue & search
-
-| Method | Description |
-|--------|-------------|
-| `playUri(uri)` / `playUriOn(playerId, uri)` | Play a MA URI |
-| `search(query)` | Run a search; results appear in the Search tab |
-| `clearQueueNow()` | Clear the active player's queue |
-| `saveQueue(name)` | Save current queue as a new playlist |
-
-### Playback mode
-
-| Method | Description |
-|--------|-------------|
-| `toggleShuffle()` | Toggle shuffle on the active player |
-| `cycleRepeat()` | Cycle repeat off → all → one |
-
-### Favorites & library
-
-| Method | Description |
-|--------|-------------|
-| `favoriteCurrent()` | Add/remove the current track to/from favorites |
-| `favoriteAdd(uri)` / `favoriteRemove(uri)` | Add/remove a URI to/from favorites |
-| `refreshFavorites()` | Force-refresh favorites from MA |
-| `refreshPlaylists()` | Force-refresh playlists from MA |
-| `refreshRecent()` | Force-refresh recent items from MA |
-
-### Misc
-
-| Method | Description |
-|--------|-------------|
-| `refresh()` | Force an immediate state refresh |
-| `openWebUI()` | Open the MA web UI in the default browser |
-
-Example keybinding in `~/.config/hypr/bindings.lua`:
-
-```lua
-local function ma_playpause()
-  Quickshell.exec("qs", "ipc", "call", "io.github.manologarciadev.music-assistant", "playPause")
-end
-
-local function ma_next()
-  Quickshell.exec("qs", "ipc", "call", "io.github.manologarciadev.music-assistant", "nextTrack")
-end
-```
-
-## API commands used
-
-- `players/all` — list of players with current state
-- `player_queues/get`, `player_queues/items` — queue state and listing for the active player
-- `players/cmd/volume_set`, `players/cmd/volume_mute`, `players/cmd/power`
-- `player_queues/play`, `pause`, `next`, `previous`, `seek`, `shuffle`, `repeat`,
-  `play_index`, `delete_item`, `clear`, `transfer`, `play_media`, `save_as_playlist`
-- `music/search`, `music/<type>/library_items` (favorites, playlists), `music/recently_played_items`
-- `music/favorites/add_item`, `music/favorites/remove_item`, `players/add_currently_playing_to_favorites`
-- `player_queues/stop`, `skip`, `crossfade`, `autoplay`, `dont_stop_the_music`, `move_item`, `move_item_end`
-- `players/sleep_timer/get|set|clear`, `players/cmd/select_source`, `players/cmd/group_volume`
-- `players/cmd/set_members`, `players/cmd/ungroup`
-- `music/browse`, `music/playlists/playlist_tracks`, `music/albums/album_tracks`, `music/artists/artist_tracks`, `music/playlists/add_playlist_tracks`
-
-See https://music-assistant.io/api/ for full API docs.
-
-## Keyboard shortcuts
-
-When the popup is open:
+### Keyboard
 
 | Key | Action |
 |-----|--------|
-| `Escape` | Close popup |
-| `Ctrl+1` … `Ctrl+8` | Jump to sidebar tab (Now, Players, Queue, Search, Browse, Favorites, Playlists, Recent) |
-| `Tab` / `Shift+Tab` | Cycle tabs |
-| `Space` | Play/pause (Now tab) |
-| `↑` / `↓` | Move focus in lists |
-| `Enter` | Activate focused item |
-| `Delete` | Remove focused item (queue, favorites) |
+| `Escape` | Close the popup |
+| `Ctrl+1` … `Ctrl+8` | Jump to a tab in sidebar order |
+| `Tab` / `Shift+Tab` | Next / previous tab |
+| `Space` | Play/pause on the Now tab |
+| `Enter` | Run the search / save the playlist name |
+
+## IPC
+
+The service registers an `IpcHandler` under
+`target: "io.github.manologarciadev.music-assistant"`:
+
+```sh
+omarchy-shell io.github.manologarciadev.music-assistant playPause
+```
+
+| Method | Description |
+|--------|-------------|
+| `status` | JSON snapshot: player, track, volume, queue state, crossfade/autoplay, favorite |
+| `playPause`, `nextTrack`, `previousTrack`, `stop` | Transport on the active player |
+| `seek(seconds)`, `seekRelative(seconds)`, `skipSeconds(seconds)` | Position |
+| `setVolumePct(percent)`, `volumeUp`, `volumeDown`, `toggleMute` | Volume (steps of 5) |
+| `power(action)` | `"on"` or `"off"` |
+| `activatePlayerById(playerId)`, `transferQueueTo(targetId)` | Change the active player |
+| `groupJoin(playerId)`, `groupLeave(playerId)` | Group a speaker with / remove it from the active player |
+| `playersList` | JSON list of every player with its state |
+| `playUri(uri)`, `playUriOn(playerId, uri)`, `enqueueUri(uri, option)` | Play a Music Assistant URI; option `next` or `add` |
+| `search(query)` | Run a search; results show in the Search tab |
+| `browse(path)` | Open a browse path (`""` for the root) |
+| `clearQueueNow`, `saveQueue(name)` | Queue |
+| `toggleShuffle`, `cycleRepeat`, `toggleCrossfade`, `toggleAutoplay` | Playback modes |
+| `sleepTimer(minutes)` | Sleep timer; `0` clears it |
+| `favoriteCurrent`, `favoriteAdd(uri)`, `favoriteRemove(uri)` | Favorites (`favoriteRemove` takes a `library://` uri) |
+| `refresh`, `refreshFavorites`, `refreshPlaylists`, `refreshRecent` | Force a reload |
+| `openWebUI` | Open the Music Assistant web UI in the default browser |
+| `listsSnapshot`, `browseSnapshot` | JSON counts and first rows of the lists, for scripts and debugging |
 
 ## Media keys
 
-On first successful config load, the plugin auto-installs Hyprland bindings for `XF86AudioPlay`, `XF86AudioPause`, `XF86AudioNext`, and `XF86AudioPrev` so your keyboard media keys control Music Assistant instead of Omarchy's default MPRIS routing.
+On the first successful config load the plugin appends a block to
+`~/.config/hypr/bindings.lua` (between `-- BEGIN music-assistant media-keys`
+and `-- END music-assistant media-keys`) binding `XF86AudioPlay/Pause/Next/Prev`
+and the volume keys to the IPC calls above, then runs `hyprctl reload`. It is
+idempotent. Set `"installMediaKeys": false` to opt out; delete the block and
+reload to uninstall.
 
-The block is appended to `~/.config/hypr/bindings.lua` between unique markers (`-- BEGIN music-assistant media-keys` / `-- END music-assistant media-keys`), is fully idempotent (won't duplicate), and runs `hyprctl reload` to activate. Look for `[music-assistant] Media key bindings installed (idempotent)` in the shell log.
-
-### Opt-out
-
-Add to your `config.json` to disable auto-installation:
-
-```json
-{ "installMediaKeys": false }
-```
-
-### Manual uninstall
-
-Delete the block between the markers in `~/.config/hypr/bindings.lua` and run `hyprctl reload`.
+`scripts/contextual-volume-control` is an alternative for the volume keys:
+bind `XF86AudioRaiseVolume/LowerVolume/Mute` to it and they go to Music
+Assistant only while its active player is playing, otherwise to Omarchy's
+local audio volume. Install it to `~/.local/bin` and set
+`installMediaKeys` to `false`.
 
 ## Security
 
-### Threat model
+The plugin runs unsandboxed inside the Omarchy shell. It assumes the local
+user is trusted (the IPC surface has no authentication) and treats the
+server as semi-trusted:
 
-This plugin runs unsandboxed as part of the user's Omarchy shell process. It assumes:
+- Strings from the server are length-bounded and arrays size-bounded
+  (64 players, 2000 queue items, 50 search hits per type, …).
+- Image URLs must be `http://` or `https://`; provider-relative artwork is
+  fetched through the server's image proxy. `file://`, `data:` and
+  `javascript:` are dropped.
+- The response body is capped at 8 MB (`curl --max-filesize`).
+- The bearer token never appears in a command line: it reaches curl over
+  stdin and a 0600 temp file (`-H @file`).
+- `config.json` is written with mode 600.
 
-- **Local user is trusted.** Any local process can call IPC methods
-  (`qs ipc call io.github.manologarciadev.music-assistant playPause`,
-  etc.) and trigger Media Assistant actions. There is no authentication
-  on the IPC surface. If untrusted local code can run as your user,
-  this plugin's actions are not isolated from it.
+## API commands used
 
-- **MA server is semi-trusted.** The plugin talks to a Music Assistant
-  server URL configured by the user. All responses are validated:
-  - Strings are length-bounded (≤500 chars) and `image_url` is
-    scheme-whitelisted to `http://`/`https://`.
-  - Arrays are size-bounded per collection (≤64 players, ≤2000 queue
-    items, ≤50 search hits, etc.).
-  - Response body is capped at 8 MB at the transport (`curl
-    --max-filesize`).
+`players/all`, `players/get`, `players/cmd/*` (volume_set, volume_mute,
+group_volume, power, set_members, ungroup, select_source),
+`players/sleep_timer/*`, `players/add_currently_playing_to_favorites`,
+`player_queues/get`, `player_queues/items`, `player_queues/*` (play, pause,
+stop, next, previous, seek, skip, shuffle, repeat, crossfade, autoplay,
+dont_stop_the_music, play_index, play_media, delete_item, move_item,
+move_item_end, clear, transfer, save_as_playlist), `music/search`,
+`music/browse`, `music/recently_played_items`, `music/<type>/library_items`,
+`music/playlists/playlist_tracks`, `music/playlists/add_playlist_tracks`,
+`music/albums/album_tracks`, `music/artists/artist_tracks`,
+`music/favorites/add_item`, `music/favorites/remove_item`.
 
-### What this plugin will not do
+See https://music-assistant.io/api/ for the full API.
 
-- Run any code from the MA server (`JavaScript` URLs in `image_url` are
-  dropped).
-- Read local files via QML's `Image` type from a compromised MA
-  (`file://` URLs are dropped).
-- Leak the bearer token into any process's argv or `/proc/PID/cmdline`
-  — the token reaches curl via stdin → a 0600-mode temp file → `-H
-  @file`, never via `-H "Authorization: ..."` on the command line.
+## Development
 
-### File permissions
-
-`config.json` is written with `umask 077` and `chmod 600` so the
-bearer token is owner-readable only. If you have an existing install
-from before this fix, run once:
-
-```sh
-chmod 600 ~/.config/omarchy/plugins/io.github.manologarciadev.music-assistant/config.json
-```
+Files under the plugin directory hot-reload on save, with one catch:
+`Service.qml` reloads as a service while the bar widget keeps its reference
+to the old one, which leaves the popup unresponsive, and `BarWidget.qml`
+changes are not picked up at all. Run `omarchy restart shell` after editing
+either. QML errors appear in `journalctl --user -t omarchy-shell`.
 
 ## Credits
 
-The Music Assistant mark in the popup header (`MaIcon.qml`) is drawn from the path in
-[music-assistant/frontend](https://github.com/music-assistant/frontend) `public/favicon.svg`, Apache-2.0.
-Music Assistant is a project of the Open Home Foundation; this plugin is not affiliated with it.
+- Original plugin: [manologarciadev/omarchy.music-assistant](https://github.com/manologarciadev/omarchy.music-assistant),
+  MIT. This fork keeps that license; see `LICENSE`.
+- The Music Assistant mark in the popup header (`MaIcon.qml`) is drawn from
+  the path in [music-assistant/frontend](https://github.com/music-assistant/frontend)
+  `public/favicon.svg`, Apache-2.0. Music Assistant is a project of the Open
+  Home Foundation; this plugin is not affiliated with it.

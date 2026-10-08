@@ -5,7 +5,11 @@ All notable changes to this plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - rwilson131 fork
+## [1.1.0] - 2026-10-07
+
+First release of the rwilson131 fork. The original plugin by manologarciadev
+(v1.0.5) has been unmaintained since 2026-08; this release audits every call
+against Music Assistant 2.10.5 and adds the features below.
 
 ### Added
 - **Browse tab**: walks the server's provider tree (`music/browse`) with Back, a filter box for long folders (SiriusXM lists 459 channels) and play / play-next / add on items.
