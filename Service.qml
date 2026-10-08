@@ -1019,10 +1019,13 @@ Item {
   }
 
   function openWebUI() {
-    if (!shell) return
     var url = root.config.openWebUiPath && root.config.openWebUiPath.length > 0
       ? root.config.openWebUiPath : root.config.url
-    shell.summon("browser", url)
+    // shell.summon() opens shell plugins by id, so summon("browser", url)
+    // silently did nothing. Launch the default browser the way the shell's
+    // Tailscale panel does; argv form, no shell, http(s) only.
+    if (!/^https?:\/\//.test(String(url || ""))) return
+    Quickshell.execDetached(["omarchy-launch-browser", String(url)])
   }
 
   function refreshFavorites() {
