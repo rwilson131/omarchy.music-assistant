@@ -345,13 +345,6 @@ Item {
     root.runFetchPlayers()
   }
 
-  function refreshIfStale(maxAgeMs) {
-    if (!root.ready) return
-    var age = Date.now() - (root._lastSuccessAt || 0)
-    if (age < maxAgeMs) return
-    root.refreshState()
-  }
-
   function runMaRequest(proc, payload) {
     if (!payload) return
     proc.authToken = payload.token || ""
@@ -545,7 +538,6 @@ Item {
     root.connected = true
     root._lastSuccessAt = Date.now()
     root.lastError = ""
-    root.updatePlayModeFromPlayer()
   }
 
   function applyQueue(payload) {
@@ -580,17 +572,6 @@ Item {
 
   function pickNextActivePlayer() {
     return MaApi.pickActivePlayerId(root.players, root.preferredPlayerId)
-  }
-
-  function refreshPlayersOnly() {
-    if (!root.ready) return
-    var payload = MaApi.buildArgs(root.config.url, root.config.token, "players/all", {}, "ws-players")
-    root.runMaRequest(playersProc, payload)
-  }
-
-  function updatePlayModeFromPlayer() {
-    // Shuffle and repeat live on the queue (see applyQueueInfo); nothing to
-    // read from the player in 2.10.
   }
 
   // ------------------------------------------------------------- helpers
@@ -699,10 +680,6 @@ Item {
     var a = args ? Object.assign({}, args) : {}
     a.queue_id = pid
     root.runAction(command, a)
-  }
-
-  function actionForSourceTarget(command, args) {
-    root.runAction(command, args)
   }
 
   function playPause(playerId) {
@@ -1023,56 +1000,6 @@ Item {
     }
   }
 
-  Process {
-    id: saveQueueProc
-    property string authToken: ""
-    property string phase: ""
-    property string name: ""
-    property string newPlaylistId: ""
-    stdinEnabled: true
-    onStarted: {
-      if (authToken.length > 0) {
-        write(authToken + "\n")
-        authToken = ""
-      }
-    }
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        if (saveQueueProc.phase !== "create") {
-          root.saveQueuePhase = ""
-          root.saveQueueNewId = ""
-          root.refreshPlaylists()
-          return
-        }
-        try {
-          var payload = JSON.parse(String(saveQueueProc.stdout.text || "{}"))
-          var res = payload.result || payload
-          var pid = res && res.item_id ? res.item_id : (res && res.uri ? res.uri.split("/").pop() : "")
-          if (!pid) {
-            root.saveQueuePhase = ""
-            return
-          }
-          root.saveQueueNewId = pid
-          var items = root.queue.map(function(it) { return it.uri || it.media_item_uri || "" }).filter(function(u) { return u.length > 0 })
-          saveQueueProc.phase = "add"
-          var payload2 = MaApi.buildArgs(root.config.url, root.config.token,
-            "music/playlists/add_playlist_tracks", { playlist_id: pid, tracks: items },
-            "save-q-add")
-          saveQueueProc.authToken = payload2.token || ""
-          saveQueueProc.command = [Quickshell.env("SHELL") || "/bin/bash", "-c", payload2.script]
-          saveQueueProc.running = true
-        } catch (e) {
-          root.lastError = "save queue parse: " + e.message
-          root.saveQueuePhase = ""
-        }
-      }
-    }
-  }
-
-  property string saveQueuePhase: ""
-  property string saveQueueNewId: ""
-
   property int searchRevision: 0
 
   // Seconds. player_queues/seek takes `position` in seconds; the old
@@ -1116,7 +1043,7 @@ Item {
 
   function addFavorite(uri) {
     if (!uri) return
-    root.actionForSourceTarget("music/favorites/add_item", { item: uri })
+    root.runAction("music/favorites/add_item", { item: uri })
     root.refreshFavorites()
   }
 

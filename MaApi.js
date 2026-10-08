@@ -19,7 +19,6 @@ var MAX_SEARCH_PLAYLISTS = 50
 var MAX_FAVORITES_PER_TYPE = 100
 var MAX_PLAYLISTS = 100
 var MAX_RECENT_ITEMS = 50
-var MAX_STRING_LENGTH = 500
 
 function truncate(s, maxLen) {
   if (s === null || s === undefined) return s
@@ -114,19 +113,6 @@ function isPaused(player) {
   return player && player.playback_state === "paused"
 }
 
-function displayName(player) {
-  if (!player) return ""
-  if (player.group_members && player.group_members.length > 1) {
-    var names = [player.name]
-    for (var i = 0; i < player.group_members.length; i++) {
-      var m = player.group_members[i]
-      if (m !== player.player_id) names.push(m)
-    }
-    return names.join(" + ")
-  }
-  return player.name || player.player_id || ""
-}
-
 function volumePercent(player) {
   if (!player) return 100
   // A group leader shows and sets the group volume, as the MA UI does.
@@ -216,13 +202,6 @@ function providerDomain(item) {
   if (item.provider_mappings && item.provider_mappings.length > 0 && item.provider_mappings[0].provider_domain)
     return item.provider_mappings[0].provider_domain
   return item.provider || ""
-}
-
-function providerInstanceName(item) {
-  if (!item) return ""
-  if (item.provider_mappings && item.provider_mappings.length > 0 && item.provider_mappings[0].provider_instance)
-    return item.provider_mappings[0].provider_instance
-  return ""
 }
 
 function mediaTypeLabel(t) {
@@ -330,22 +309,6 @@ function mapMediaItem(it, serverUrl) {
   }
 }
 
-function repeatModeIcon(mode) {
-  if (mode === "one") return ""
-  if (mode === "all") return ""
-  return ""
-}
-
-function repeatModeLabel(mode) {
-  if (mode === "one") return "Repeat one"
-  if (mode === "all") return "Repeat all"
-  return "Repeat off"
-}
-
-function shuffleIcon(enabled) {
-  return enabled ? "" : ""
-}
-
 function formatRelativeTime(epochSeconds) {
   if (!epochSeconds || epochSeconds <= 0) return ""
   var now = Math.floor(Date.now() / 1000)
@@ -355,25 +318,4 @@ function formatRelativeTime(epochSeconds) {
   if (delta < 86400) return Math.floor(delta / 3600) + " h ago"
   if (delta < 604800) return Math.floor(delta / 86400) + " d ago"
   return new Date(epochSeconds * 1000).toLocaleDateString()
-}
-
-function parseEvent(message) {
-  try {
-    var obj = JSON.parse(String(message || "{}"))
-    return {
-      event: obj.event || "",
-      objectId: obj.object_id || obj.data || null,
-      data: obj.data || null
-    }
-  } catch (e) {
-    return { event: "", objectId: null, data: null }
-  }
-}
-
-function providerInstanceLabel(item) {
-  if (!item) return ""
-  if (item.provider_mappings && item.provider_mappings.length > 0 && item.provider_mappings[0].provider_instance) {
-    return item.provider_mappings[0].provider_instance
-  }
-  return ""
 }
