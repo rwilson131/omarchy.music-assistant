@@ -25,7 +25,8 @@ omarchy plugin add https://github.com/rwilson131/omarchy.music-assistant.git --e
    ```sh
    chmod 600 config.json
    ```
-3. Add the widget to the bar (see below) or run `omarchy restart shell`.
+3. Add the widget to the bar (see below). The plugin picks the config up
+   within a few seconds; `omarchy restart shell` is not needed.
 
 ### Config keys
 
@@ -39,7 +40,7 @@ omarchy plugin add https://github.com/rwilson131/omarchy.music-assistant.git --e
 | `recentLimit` | `50` | Items in the Recent tab |
 | `showSourceBadge` | `true` | Provider badge on list rows |
 | `openWebUiPath` | `""` | URL the globe button opens; defaults to `url` |
-| `installMediaKeys` | `true` | Install Hyprland media-key bindings on first run (see below) |
+| `installMediaKeys` | `false` | Keyboard media keys (see below); the Players tab switch writes this |
 | `mprisFallback` | `true` | Route play/pause/next to a playing MPRIS player (browser, Spotify) instead of Music Assistant |
 
 ## Bar widget
@@ -95,6 +96,7 @@ omarchy-shell io.github.rwilson131.music-assistant playPause
 |--------|-------------|
 | `status` | JSON snapshot: player, track, volume, queue state, crossfade/autoplay, favorite |
 | `playPause`, `nextTrack`, `previousTrack`, `stop` | Transport on the active player |
+| `mediaKeys(on\|off\|status)` | Install / remove the Hyprland media-key block; returns the state |
 | `seek(seconds)`, `seekRelative(seconds)`, `skipSeconds(seconds)` | Position |
 | `setVolumePct(percent)`, `volumeUp`, `volumeDown`, `toggleMute` | Volume (steps of 5) |
 | `power(action)` | `"on"` or `"off"` |
@@ -114,18 +116,24 @@ omarchy-shell io.github.rwilson131.music-assistant playPause
 
 ## Media keys
 
-On the first successful config load the plugin appends a block to
-`~/.config/hypr/bindings.lua` (between `-- BEGIN music-assistant media-keys`
-and `-- END music-assistant media-keys`) binding `XF86AudioPlay/Pause/Next/Prev`
-and the volume keys to the IPC calls above, then runs `hyprctl reload`. It is
-idempotent. Set `"installMediaKeys": false` to opt out; delete the block and
-reload to uninstall.
+Off by default. Turn it on from the popup: **Players tab → This computer →
+Media keys**, or with `omarchy-shell io.github.rwilson131.music-assistant mediaKeys on`.
 
-`scripts/contextual-volume-control` is an alternative for the volume keys:
-bind `XF86AudioRaiseVolume/LowerVolume/Mute` to it and they go to Music
-Assistant only while its active player is playing, otherwise to Omarchy's
-local audio volume. Install it to `~/.local/bin` and set
-`installMediaKeys` to `false`.
+On, the plugin appends a marked block to `~/.config/hypr/bindings.lua`
+(between `-- BEGIN music-assistant media-keys` and `-- END …`) and reloads
+Hyprland:
+
+- `XF86AudioPlay/Pause/Next/Prev` control Music Assistant's active player.
+- `XF86AudioRaiseVolume/LowerVolume/Mute` go through
+  `scripts/contextual-volume-control`: to Music Assistant in steps of 5 while
+  its active player is playing, with an on-screen display naming the player,
+  otherwise to Omarchy's normal local-audio volume. A volume key while muted
+  only unmutes. If the shell or the plugin is down the keys keep local
+  behaviour.
+
+Off removes the block and reloads. The state is `installMediaKeys` in
+`config.json`, so you can also set it there. Upgrading from 1.0.x with the
+old block installed turns the switch on and updates the block.
 
 ## Security
 

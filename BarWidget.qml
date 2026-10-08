@@ -661,6 +661,24 @@ BarWidget {
                   font.family: root.bar.fontFamily
                   font.pixelSize: Style.font.caption
                 }
+
+                PanelSectionHeader {
+                  foreground: root.bar.foreground
+                  text: "THIS COMPUTER"
+                }
+
+                // Keyboard media keys. Writes or removes a marked block in
+                // ~/.config/hypr/bindings.lua; see Service.mediaKeysBindingsBlock.
+                Toggle {
+                  width: parent.width
+                  label: "Media keys"
+                  description: "Play/pause, next and previous control Music Assistant. Volume keys do while it is playing, otherwise they stay with Omarchy."
+                  checked: root.service ? root.service.mediaKeysEnabled : false
+                  enabled: root.serviceReady
+                  foreground: root.bar.foreground
+                  fontFamily: root.bar.fontFamily
+                  onClicked: if (root.service) root.service.setMediaKeysEnabled(!root.service.mediaKeysEnabled)
+                }
               }
   
               // ------------------ Queue section

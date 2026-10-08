@@ -7,6 +7,6 @@
   "recentLimit": 50,
   "showSourceBadge": true,
   "openWebUiPath": "",
-  "installMediaKeys": true,
+  "installMediaKeys": false,
   "mprisFallback": true
 }

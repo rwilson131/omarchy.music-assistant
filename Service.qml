@@ -150,36 +150,54 @@ Item {
       root.configError = "config.json missing or unreadable"
       root.config = ({})
       root.ready = false
+      // A fresh install has no config.json yet; the watcher does not see a
+      // file that appears later, so keep retrying until it loads.
+      configRetry.start()
     }
+  }
+
+  Timer {
+    id: configRetry
+    interval: 3000
+    repeat: true
+    onTriggered: configFile.reload()
   }
 
   Component.onCompleted: {
     if (configFile) configFile.reload()
-    Qt.callLater(function() {
-      installMediaKeysBindings()
-    })
   }
 
-  // --------------------------------------------------- media keys installer
+  // --------------------------------------------------- media keys
 
   readonly property string mediaKeysMarkerBegin: "-- BEGIN music-assistant media-keys"
   readonly property string mediaKeysMarkerEnd: "-- END music-assistant media-keys"
   readonly property string ipcTarget: root.pluginId
+  readonly property string pluginDir: home + "/.config/omarchy/plugins/" + pluginId
+  readonly property string hyprBindingsPath: home + "/.config/hypr/bindings.lua"
 
+  // The switch on the Players tab. Backed by config.json's installMediaKeys
+  // so the file, the popup and the IPC call stay in step.
+  readonly property bool mediaKeysEnabled: !!(root.config && root.config.installMediaKeys === true)
+  property var configPresent: ({})
+
+  // Play/pause/next/previous go straight to the plugin. The volume keys go
+  // through scripts/contextual-volume-control, which sends them to Music
+  // Assistant only while its active player is playing and otherwise keeps
+  // Omarchy's local-audio behaviour. An older block is replaced on the next
+  // enable because the installer compares the installed text with this.
   function mediaKeysBindingsBlock() {
     var qsBin = "/usr/bin/qs"
     var omarchyShell = (Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy") + "/shell"
     var ipcCmd = qsBin + " -p " + omarchyShell + " ipc call " + root.pluginId
+    var volCmd = root.pluginDir + "/scripts/contextual-volume-control"
     return [
       "",
       mediaKeysMarkerBegin,
+      "-- Installed by the Music Assistant plugin (Players tab > Media keys).",
       "hl.unbind(\"XF86AudioNext\")",
       "hl.unbind(\"XF86AudioPrev\")",
       "hl.unbind(\"XF86AudioPlay\")",
       "hl.unbind(\"XF86AudioPause\")",
-      // The installed block also takes the volume keys. To route them to the
-      // laptop while Music Assistant is idle instead, set installMediaKeys to
-      // false and bind them to scripts/contextual-volume-control.
       "hl.unbind(\"XF86AudioRaiseVolume\")",
       "hl.unbind(\"XF86AudioLowerVolume\")",
       "hl.unbind(\"XF86AudioMute\")",
@@ -187,53 +205,127 @@ Item {
       "o.bind(\"XF86AudioPrev\", \"Music previous\", \"" + ipcCmd + " previousTrack\", { locked = true })",
       "o.bind(\"XF86AudioPlay\", \"Music play/pause\", \"" + ipcCmd + " playPause\", { locked = true })",
       "o.bind(\"XF86AudioPause\", \"Music play/pause\", \"" + ipcCmd + " playPause\", { locked = true })",
-      "o.bind(\"XF86AudioRaiseVolume\", \"Music volume up\", \"" + ipcCmd + " volumeUp\", { locked = true, repeating = true })",
-      "o.bind(\"XF86AudioLowerVolume\", \"Music volume down\", \"" + ipcCmd + " volumeDown\", { locked = true, repeating = true })",
-      "o.bind(\"XF86AudioMute\", \"Music mute\", \"" + ipcCmd + " toggleMute\", { locked = true })",
+      "-- Volume keys: Music Assistant while it is playing, otherwise local audio.",
+      "o.bind(\"XF86AudioRaiseVolume\", \"Volume up\", \"" + volCmd + " raise\", { locked = true, repeating = true })",
+      "o.bind(\"XF86AudioLowerVolume\", \"Volume down\", \"" + volCmd + " lower\", { locked = true, repeating = true })",
+      "o.bind(\"XF86AudioMute\", \"Mute\", \"" + volCmd + " mute-toggle\", { locked = true })",
       mediaKeysMarkerEnd,
       ""
     ].join("\n")
   }
 
   function installMediaKeysBindings() {
-    if (!root.ready) return
-    if (root.config && root.config.installMediaKeys === false) return
-
+    if (!root.ready || !root.mediaKeysEnabled) return
     mediaKeysInstaller.running = true
   }
 
-  readonly property string mediaKeysInstallScript: {
-    var hyprConfig = Quickshell.env("HOME") + "/.config/hypr/bindings.lua"
-    var block = root.mediaKeysBindingsBlock().replace(/'/g, "'\\''")
-    return "set -e\n" +
-      "F=\"" + hyprConfig + "\"\n" +
-      "if [ ! -f \"$F\" ]; then exit 0; fi\n" +
-      "if grep -qF -e '" + root.mediaKeysMarkerBegin + "' \"$F\"; then exit 0; fi\n" +
-      "touch \"$F\"\n" +
-      "if [ -s \"$F\" ] && [ -n \"$(tail -c 1 \"$F\")\" ]; then echo >> \"$F\"; fi\n" +
-      "printf '%s\\n' '" + block + "' >> \"$F\"\n" +
-      "hyprctl reload >/dev/null 2>&1 || true\n" +
-      // Exit 42 = we just installed (caller shows first-run OSD)
-      "exit 42\n"
+  function uninstallMediaKeysBindings() {
+    mediaKeysUninstaller.running = true
   }
+
+  function setMediaKeysEnabled(on) {
+    if (!root.ready || !root.config) return
+    var next = !!on
+    if (root.config.installMediaKeys === next) {
+      if (next) installMediaKeysBindings()
+      return
+    }
+    var cfg = Object.assign({}, root.config)
+    cfg.installMediaKeys = next
+    root.config = cfg
+    root.persistConfig()
+    if (next) installMediaKeysBindings()
+    else uninstallMediaKeysBindings()
+  }
+
+  // awk programs for the scripts below: print the block, or everything but
+  // the block, between the two markers (matched at line start).
+  readonly property string mediaKeysAwkBlock: "index($0,b)==1{p=1} p{print} index($0,e)==1{p=0}"
+  readonly property string mediaKeysAwkOutside: "index($0,b)==1{p=1} !p{print} index($0,e)==1{p=0}"
+
+  function mediaKeysShellPrelude() {
+    return "set -e\n" +
+      "F='" + root.hyprBindingsPath.replace(/'/g, "'\\''") + "'\n" +
+      "B='" + root.mediaKeysMarkerBegin + "'\n" +
+      "E='" + root.mediaKeysMarkerEnd + "'\n"
+  }
+
+  // Exit 0 = already current, 42 = installed, 43 = replaced an older block.
+  readonly property string mediaKeysInstallScript: {
+    var block = root.mediaKeysBindingsBlock().replace(/'/g, "'\\''")
+    return root.mediaKeysShellPrelude() +
+      "if [ ! -f \"$F\" ]; then exit 0; fi\n" +
+      "T=$(mktemp); C=$(mktemp); D=$(mktemp)\n" +
+      "trap 'rm -f \"$T\" \"$C\" \"$D\"' EXIT\n" +
+      "printf '%s\\n' '" + block + "' > \"$T\"\n" +
+      "status=42\n" +
+      "if grep -qF -e \"$B\" \"$F\"; then\n" +
+      "  awk -v b=\"$B\" -v e=\"$E\" '" + root.mediaKeysAwkBlock + "' \"$F\" > \"$C\"\n" +
+      "  awk -v b=\"$B\" -v e=\"$E\" '" + root.mediaKeysAwkBlock + "' \"$T\" > \"$D\"\n" +
+      "  if cmp -s \"$C\" \"$D\"; then exit 0; fi\n" +
+      "  awk -v b=\"$B\" -v e=\"$E\" '" + root.mediaKeysAwkOutside + "' \"$F\" > \"$F.tmp\" && mv -f \"$F.tmp\" \"$F\"\n" +
+      "  status=43\n" +
+      "fi\n" +
+      "if [ -s \"$F\" ] && [ -n \"$(tail -c 1 \"$F\")\" ]; then echo >> \"$F\"; fi\n" +
+      "cat \"$T\" >> \"$F\"\n" +
+      "hyprctl reload >/dev/null 2>&1 || true\n" +
+      "exit $status\n"
+  }
+
+  // Exit 0 = nothing to do, 44 = removed.
+  readonly property string mediaKeysUninstallScript: root.mediaKeysShellPrelude() +
+    "if [ ! -f \"$F\" ]; then exit 0; fi\n" +
+    "grep -qF -e \"$B\" \"$F\" || exit 0\n" +
+    "awk -v b=\"$B\" -v e=\"$E\" '" + root.mediaKeysAwkOutside + "' \"$F\" > \"$F.tmp\" && mv -f \"$F.tmp\" \"$F\"\n" +
+    "hyprctl reload >/dev/null 2>&1 || true\n" +
+    "exit 44\n"
+
+  // Exit 0 = a block is present, 1 = not.
+  readonly property string mediaKeysProbeScript: root.mediaKeysShellPrelude() +
+    "[ -f \"$F\" ] && grep -qF -e \"$B\" \"$F\"\n"
 
   Process {
     id: mediaKeysInstaller
     command: [Quickshell.env("SHELL") || "/bin/bash", "-c", root.mediaKeysInstallScript]
     onExited: function(exitCode) {
       if (exitCode === 0) {
-        console.log("[music-assistant] Media key bindings: nothing to do (already installed)")
+        console.log("[music-assistant] Media key bindings: already current")
       } else if (exitCode === 42) {
-        console.log("[music-assistant] Media key bindings installed (first run)")
-        root.showOsd(
-          "Media keys enabled",
-          "media-play",
-          "XF86AudioPlay/Pause/Next/Prev now control Music Assistant. " +
-          "Revert by removing the music-assistant media-keys block in ~/.config/hypr/bindings.lua."
-        )
+        console.log("[music-assistant] Media key bindings installed")
+        root.showOsd("Media keys on", "input-keyboard",
+          "Play/pause, next and previous control Music Assistant; volume keys while it is playing")
+      } else if (exitCode === 43) {
+        console.log("[music-assistant] Media key bindings updated")
+        root.showOsd("Media keys updated", "input-keyboard",
+          "Volume keys now follow Music Assistant only while it is playing")
       } else {
         console.warn("[music-assistant] Failed to install media key bindings: exitCode=" + exitCode)
       }
+    }
+  }
+
+  Process {
+    id: mediaKeysUninstaller
+    command: [Quickshell.env("SHELL") || "/bin/bash", "-c", root.mediaKeysUninstallScript]
+    onExited: function(exitCode) {
+      if (exitCode === 44) {
+        console.log("[music-assistant] Media key bindings removed")
+        root.showOsd("Media keys off", "input-keyboard", "Keyboard media keys returned to Omarchy")
+      } else if (exitCode !== 0) {
+        console.warn("[music-assistant] Failed to remove media key bindings: exitCode=" + exitCode)
+      }
+    }
+  }
+
+  // Upgrading from 1.0.x: the config has no installMediaKeys key (so the new
+  // default, off, applies) but the old block is still installed. Treat that
+  // as on, so the switch matches reality and the block gets updated.
+  Process {
+    id: mediaKeysProbe
+    command: [Quickshell.env("SHELL") || "/bin/bash", "-c", root.mediaKeysProbeScript]
+    onExited: function(exitCode) {
+      if (exitCode === 0 && root.ready && root.config && !root.mediaKeysEnabled && !root.configPresent.installMediaKeys)
+        root.setMediaKeysEnabled(true)
     }
   }
 
@@ -297,12 +389,17 @@ Item {
   function applyConfig(text) {
     var result = ConfigSchema.parse(text)
     root.config = result.config
+    root.configPresent = result.present || ({})
     root.preferredPlayerId = result.config.preferredPlayerId || ""
     root.ready = result.error.length === 0
     root.configError = result.error
     if (root.ready) {
+      configRetry.stop()
       root.startConnection()
-      Qt.callLater(function() { root.installMediaKeysBindings() })
+      Qt.callLater(function() {
+        root.installMediaKeysBindings()
+        mediaKeysProbe.running = true
+      })
     } else {
       root.stopConnection()
       root.configError = result.error || "invalid config"
@@ -1598,6 +1695,14 @@ Item {
     function stop(): string {
       root.stop(root.activePlayerId)
       return "ok"
+    }
+
+    // "on" / "off" install or remove the Hyprland media-key block; anything
+    // else just reports the current state.
+    function mediaKeys(action: string): string {
+      if (action === "on") root.setMediaKeysEnabled(true)
+      else if (action === "off") root.setMediaKeysEnabled(false)
+      return root.mediaKeysEnabled ? "on" : "off"
     }
 
     function skipSeconds(seconds: real): string {

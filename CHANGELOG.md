@@ -5,6 +5,16 @@ All notable changes to this plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-10-07
+
+### Added
+- **Media keys switch** on the Players tab (also `mediaKeys on|off` over IPC). On writes the marked block to `~/.config/hypr/bindings.lua` and reloads Hyprland; Off removes it. The state is `installMediaKeys` in `config.json`, now **off by default** for new installs: the plugin no longer edits Hyprland config on first run.
+- The installed block routes the volume keys through `scripts/contextual-volume-control` in the plugin folder, so they drive Music Assistant only while its active player is playing and otherwise keep Omarchy's local audio behaviour. An older block from 1.0.x is replaced on the next enable; an upgrade with the old block installed turns the switch On so it matches.
+
+### Fixed
+- A `config.json` created after the plugin loaded is picked up within a few seconds; it used to need a shell restart (the file watcher never saw the file appear).
+- The media-key installer ran twice on every config load.
+
 ## [1.1.0] - 2026-10-07
 
 First release of the rwilson131 fork. The original plugin by manologarciadev

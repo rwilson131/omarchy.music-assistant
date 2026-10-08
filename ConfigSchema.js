@@ -9,7 +9,7 @@ var DEFAULTS = {
   recentLimit: 50,
   showSourceBadge: true,
   openWebUiPath: "",
-  installMediaKeys: true,
+  installMediaKeys: false,
   mprisFallback: true
 }
 
@@ -52,8 +52,9 @@ function parse(text) {
     return { config: Object.assign({}, DEFAULTS), error: "config root must be object" }
   }
   var merged = Object.assign({}, DEFAULTS)
+  var present = {}
   for (var k in DEFAULTS) {
-    if (parsed[k] !== undefined) merged[k] = coerce(parsed[k], k)
+    if (parsed[k] !== undefined) { merged[k] = coerce(parsed[k], k); present[k] = true }
   }
   for (var k2 in parsed) {
     if (!(k2 in DEFAULTS)) merged[k2] = parsed[k2]
@@ -62,5 +63,5 @@ function parse(text) {
   if (!merged.url || String(merged.url).length === 0) error = "missing url"
   else if (!merged.token || String(merged.token).length === 0) error = "missing token"
   else if (merged.pollIntervalMs < 500) error = "pollIntervalMs too low (min 500)"
-  return { config: merged, error: error }
+  return { config: merged, error: error, present: present }
 }
