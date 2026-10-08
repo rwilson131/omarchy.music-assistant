@@ -8,9 +8,9 @@ import "MaApi.js" as MaApi
 
 BarWidget {
   id: root
-  moduleName: "io.github.manologarciadev.music-assistant"
+  moduleName: "io.github.rwilson131.music-assistant"
 
-  readonly property var service: bar && bar.shell ? bar.shell.firstPartyServiceFor("io.github.manologarciadev.music-assistant") : null
+  readonly property var service: bar && bar.shell ? bar.shell.firstPartyServiceFor("io.github.rwilson131.music-assistant") : null
   readonly property bool serviceReady: service && service.ready
   readonly property bool serviceConnected: service && service.connected
 

@@ -11,7 +11,7 @@ case "$action" in
   *) echo "Usage: contextual-volume-control <raise|lower|mute-toggle>" >&2; exit 1 ;;
 esac
 
-plugin="io.github.manologarciadev.music-assistant"
+plugin="io.github.rwilson131.music-assistant"
 shell_dir="${OMARCHY_PATH:-/usr/share/omarchy}/shell"
 step=5
 

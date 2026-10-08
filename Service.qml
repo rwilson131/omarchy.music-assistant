@@ -17,7 +17,7 @@ Item {
   property bool ready: false
 
   readonly property string home: Quickshell.env("HOME") || ""
-  readonly property string pluginId: "io.github.manologarciadev.music-assistant"
+  readonly property string pluginId: "io.github.rwilson131.music-assistant"
   readonly property string configPath: home + "/.config/omarchy/plugins/" + pluginId + "/config.json"
 
   // ---------------------------------------------------------------- state

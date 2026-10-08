@@ -63,7 +63,7 @@ against Music Assistant 2.10.5 and adds the features below.
 ## [1.0.3] - 2026-08-27
 
 ### Security
-- `config.json` is now written with `umask 077` and `chmod 600`, so the file containing the MA bearer token is owner-readable only (was 0644, world-readable). Existing installs: run `chmod 600 ~/.config/omarchy/plugins/io.github.manologarciadev.music-assistant/config.json` once.
+- `config.json` is now written with `umask 077` and `chmod 600`, so the file containing the MA bearer token is owner-readable only (was 0644, world-readable). Existing installs: run `chmod 600 ~/.config/omarchy/plugins/io.github.rwilson131.music-assistant/config.json` once.
 
 ## [1.0.2] - 2026-08-27
 
@@ -101,6 +101,6 @@ against Music Assistant 2.10.5 and adds the features below.
 - HTTP polling for live state with 2-second default interval
 
 ### Notes
-- Plugin id: `io.github.manologarciadev.music-assistant`
+- Plugin id: `io.github.rwilson131.music-assistant`
 - License: MIT
 - Tested on Quickshell-git, Omarchy (Quattro)

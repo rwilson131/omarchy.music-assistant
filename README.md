@@ -20,7 +20,7 @@ omarchy plugin add https://github.com/rwilson131/omarchy.music-assistant.git --e
 1. In Music Assistant go to **Settings → Profile** and create a long-lived
    access token.
 2. Copy `config.example.json` to `config.json` in the plugin directory
-   (`~/.config/omarchy/plugins/io.github.manologarciadev.music-assistant/`)
+   (`~/.config/omarchy/plugins/io.github.rwilson131.music-assistant/`)
    and set `url` and `token`. The token grants admin access, so:
    ```sh
    chmod 600 config.json
@@ -47,7 +47,7 @@ omarchy plugin add https://github.com/rwilson131/omarchy.music-assistant.git --e
 Add to the bar layout in `~/.config/omarchy/shell.json`:
 
 ```jsonc
-{ "id": "io.github.manologarciadev.music-assistant", "section": "right" }
+{ "id": "io.github.rwilson131.music-assistant", "section": "right" }
 ```
 
 In the bar: left-click play/pause, middle-click next, right-click opens the
@@ -85,10 +85,10 @@ remove instead). Album, artist and playlist rows play the whole collection.
 ## IPC
 
 The service registers an `IpcHandler` under
-`target: "io.github.manologarciadev.music-assistant"`:
+`target: "io.github.rwilson131.music-assistant"`:
 
 ```sh
-omarchy-shell io.github.manologarciadev.music-assistant playPause
+omarchy-shell io.github.rwilson131.music-assistant playPause
 ```
 
 | Method | Description |
