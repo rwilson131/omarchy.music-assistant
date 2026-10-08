@@ -250,7 +250,26 @@ BarWidget {
             anchors.fill: parent
             clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-            ScrollBar.vertical.policy: ScrollBar.AlwaysOn
+
+            // Themed scrollbar parked in the card's right padding, beside the
+            // content instead of on top of it, so row borders stay visible.
+            // It is parented to the popup FocusScope because popupColumn clips.
+            ScrollBar.vertical: ThemedScrollBar {
+              id: contentScrollBar
+              parent: popupFocus
+              bar: root.bar
+              x: popupColumn.x + popupColumn.width + Style.space(2)
+              y: popupColumn.y
+              height: popupColumn.height
+            }
+
+            // Only let the flickable grab wheel and drag input while there is
+            // something to scroll, as the shell's own panels do.
+            Binding {
+              target: contentFlick.contentItem
+              property: "interactive"
+              value: contentColumn.implicitHeight > contentFlick.height
+            }
 
             Column {
               id: contentColumn

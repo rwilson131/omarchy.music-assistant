@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - rwilson131 fork
 
+### Changed
+- Popup scrollbar is drawn with the shell's theme tokens (`ThemedScrollBar.qml`): a thin pill in the popup foreground colour, accent while dragged, parked in the card padding beside the content. It only appears when a tab actually overflows; the stock Qt bar was a flat gray track that stayed on screen even when nothing could scroll. The flickable also only grabs wheel/drag input while there is something to scroll.
+
 ### Fixed
 - Picks replace the queue (`option: "replace"`) instead of inserting before whatever was queued, so a radio station no longer takes over after a track ends.
 - Actions sent while another is in flight are queued and run in order instead of being silently dropped (quick second key press, volume right after unmute, held volume keys).

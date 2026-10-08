@@ -41,7 +41,8 @@ Item {
       }
     }
 
-    ScrollBar.vertical: ScrollBar { }
+    // The list is sized to its content and scrolled by the popup's outer
+    // ScrollView, so it carries no scrollbar of its own.
 
     Text {
       anchors.centerIn: parent
