@@ -140,8 +140,11 @@ Hyprland:
   behaviour.
 
 Off removes the block and reloads. The state is `installMediaKeys` in
-`config.json`, so you can also set it there. Upgrading from 1.0.x with the
-old block installed turns the switch on and updates the block.
+`config.json`, so you can also set it there. A block already on disk at
+startup (an upgrade from 1.0.x, or a reinstall) turns the switch on and
+rewrites the block for the current install. Turn the switch off before
+`omarchy plugin remove` if you want the keys back with Omarchy; removing
+the plugin does not edit `bindings.lua`.
 
 ## Security
 

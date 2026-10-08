@@ -342,14 +342,16 @@ Item {
     }
   }
 
-  // Upgrading from 1.0.x: the config has no installMediaKeys key (so the new
-  // default, off, applies) but the old block is still installed. Treat that
-  // as on, so the switch matches reality and the block gets updated.
+  // A block on disk means the keys are bound to this plugin, whatever the
+  // config says: an upgrade from 1.0.x (no installMediaKeys key yet), or a
+  // reinstall after a remove that left the block behind, pointing at a
+  // folder that no longer exists. Turn the switch on so the state matches
+  // and the block is rewritten for this install.
   Process {
     id: mediaKeysProbe
     command: [Quickshell.env("SHELL") || "/bin/bash", "-c", root.mediaKeysProbeScript]
     onExited: function(exitCode) {
-      if (exitCode === 0 && root.ready && root.config && !root.mediaKeysEnabled && !root.configPresent.installMediaKeys)
+      if (exitCode === 0 && root.ready && root.config && !root.mediaKeysEnabled)
         root.setMediaKeysEnabled(true)
     }
   }
