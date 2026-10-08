@@ -34,7 +34,10 @@ omarchy plugin add https://github.com/manologarciadev/music-assistant.git --enab
 ## Features
 
 - Live now-playing in the bar with auto-scrolling label
-- Popup with 7 tabs: Now, Players, Queue, Search, Favorites, Playlists, Recent
+- Popup with 8 tabs: Now, Players, Queue, Search, Browse, Favorites, Playlists, Recent
+- Queue options (crossfade, autoplay, don't stop the music), sleep timer, stop, native sources
+- Speaker grouping (join / leave / ungroup with the active player), group volume
+- Queue reordering and save-as-playlist; playlist drill-down; play-next / add-to-queue on every row
 - Transport: play/pause, next/previous, seek (click progress bar)
 - Shuffle and repeat (off / all / one) toggles
 - Per-player volume slider with mute toggle
@@ -151,6 +154,10 @@ end
   `play_index`, `delete_item`, `clear`, `transfer`, `play_media`, `save_as_playlist`
 - `music/search`, `music/<type>/library_items` (favorites, playlists), `music/recently_played_items`
 - `music/favorites/add_item`, `music/favorites/remove_item`, `players/add_currently_playing_to_favorites`
+- `player_queues/stop`, `skip`, `crossfade`, `autoplay`, `dont_stop_the_music`, `move_item`, `move_item_end`
+- `players/sleep_timer/get|set|clear`, `players/cmd/select_source`, `players/cmd/group_volume`
+- `players/cmd/set_members`, `players/cmd/ungroup`
+- `music/browse`, `music/playlists/playlist_tracks`, `music/albums/album_tracks`, `music/artists/artist_tracks`, `music/playlists/add_playlist_tracks`
 
 See https://music-assistant.io/api/ for full API docs.
 
@@ -161,7 +168,7 @@ When the popup is open:
 | Key | Action |
 |-----|--------|
 | `Escape` | Close popup |
-| `Ctrl+1` … `Ctrl+7` | Jump to sidebar tab (Now, Players, Queue, Search, Favorites, Playlists, Recent) |
+| `Ctrl+1` … `Ctrl+8` | Jump to sidebar tab (Now, Players, Queue, Search, Browse, Favorites, Playlists, Recent) |
 | `Tab` / `Shift+Tab` | Cycle tabs |
 | `Space` | Play/pause (Now tab) |
 | `↑` / `↓` | Move focus in lists |

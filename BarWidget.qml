@@ -28,12 +28,106 @@ BarWidget {
   readonly property int elapsed: service ? service.activeElapsed : 0
   readonly property int revision: service ? service.revision : 0
 
-  // Active popup section: "now", "players", "queue", "search"
+  // Active popup section: "now", "players", "queue", "search", "browse",
+  // "favorites", "playlists", "recent"
   property string popupSection: "now"
   property bool popupOpen: false
+  property bool queueSaveOpen: false
+  property string browseFilter: ""
+
+  readonly property var tabOrder: ["now", "players", "queue", "search", "browse", "favorites", "playlists", "recent"]
+
+  // True while the active player plays one of its native inputs (Sonos
+  // line-in / TV) instead of the Music Assistant queue.
+  readonly property bool nativeSourceActive: {
+    var p = activePlayer
+    if (!p || !p.source_list) return false
+    for (var i = 0; i < p.source_list.length; i++) if (p.source_list[i].id === p.active_source) return true
+    return false
+  }
+
+  // Players tab order: active, playing, idle, groups, unavailable; hidden
+  // players stay hidden as in the MA UI.
+  function sortedPlayers() {
+    if (!service) return []
+    var _r = service.revision
+    var active = service.activePlayerId
+    var list = service.players.filter(function(p) { return !p.hide_in_ui })
+    function rank(p) {
+      if (p.player_id === active) return 0
+      if (!p.available) return 4
+      if (p.playback_state === "playing") return 1
+      if (p.type === "group") return 3
+      return 2
+    }
+    list.sort(function(a, b) {
+      var ra = rank(a), rb = rank(b)
+      if (ra !== rb) return ra - rb
+      return String(a.name).localeCompare(String(b.name))
+    })
+    return list
+  }
+
+  function filteredBrowseItems() {
+    if (!service) return []
+    var _r = service.browseRevision
+    var items = service.browseItems
+    var f = browseFilter.trim().toLowerCase()
+    if (f.length > 0) items = items.filter(function(it) { return String(it.name || "").toLowerCase().indexOf(f) !== -1 })
+    return items.slice(0, 200)
+  }
+
+  // Small toggle/action chip used for queue options and native sources.
+  component Chip: BorderSurface {
+    id: chip
+    property string label: ""
+    property string icon: ""
+    property bool active: false
+    signal clicked()
+
+    width: chipInner.implicitWidth + Style.space(12)
+    height: Style.space(24)
+    radius: Style.cornerRadius
+    opacity: enabled ? 1.0 : 0.4
+    color: active
+      ? Style.selectedFillFor(root.bar.foreground, Color.accent)
+      : Style.normalFillFor(root.bar.foreground, Color.accent)
+    borderSpec: active
+      ? Border.controlSpec("normal", root.bar.foreground, Color.accent)
+      : Border.controlSpec("normal", Qt.darker(root.bar.foreground, 1.4), Color.accent)
+
+    Row {
+      id: chipInner
+      anchors.centerIn: parent
+      spacing: Style.space(4)
+      Text {
+        visible: chip.icon !== ""
+        text: chip.icon
+        color: root.bar.foreground
+        font.family: root.bar.fontFamily
+        font.pixelSize: Style.font.caption
+        anchors.verticalCenter: parent.verticalCenter
+      }
+      Text {
+        text: chip.label
+        color: root.bar.foreground
+        font.family: root.bar.fontFamily
+        font.pixelSize: Style.font.caption
+        font.bold: chip.active
+        anchors.verticalCenter: parent.verticalCenter
+      }
+    }
+
+    MouseArea {
+      anchors.fill: parent
+      cursorShape: Qt.PointingHandCursor
+      onClicked: chip.clicked()
+    }
+  }
 
   onPopupSectionChanged: {
     if (popupSection !== "search") searchFilter = "all"
+    if (popupSection !== "playlists" && popupSection !== "favorites" && service && service.drillItem) service.closeCollection()
     activatePopupSection()
   }
 
@@ -56,6 +150,8 @@ BarWidget {
       service.refreshPlaylists()
     } else if (popupSection === "recent") {
       service.refreshRecent()
+    } else if (popupSection === "browse") {
+      if (service.browseItems.length === 0 && !service.browseLoading) service.browseRoot()
     }
   }
 
@@ -167,7 +263,7 @@ BarWidget {
     open: root.popupOpen
     focusTarget: popupFocus
     contentWidth: popup.fittedContentWidth(Style.space(root.popupWidth))
-    contentHeight: popup.fittedContentHeight(hero.implicitHeight + Style.space(21) + Math.max(sidebar.implicitHeight, 320), 620)
+    contentHeight: popup.fittedContentHeight(hero.implicitHeight + Style.space(21) + Math.max(sidebar.implicitHeight, 380), 680)
 
     onOpenChanged: {
       if (open && root.service && typeof root.service.refreshState === "function") {
@@ -189,14 +285,14 @@ BarWidget {
           root.popupOpen = false
           event.accepted = true
         } else if (event.modifiers === Qt.ControlModifier) {
-          var tabs = ["now", "players", "queue", "search", "favorites", "playlists", "recent"]
+          var tabs = root.tabOrder
           var n = parseInt(event.text)
           if (!isNaN(n) && n >= 1 && n <= tabs.length) {
             root.popupSection = tabs[n - 1]
             event.accepted = true
           }
         } else if (event.key === Qt.Key_Tab) {
-          var tabs2 = ["now", "players", "queue", "search", "favorites", "playlists", "recent"]
+          var tabs2 = root.tabOrder
           var idx = tabs2.indexOf(root.popupSection)
           if (event.modifiers === Qt.ShiftModifier) idx = (idx - 1 + tabs2.length) % tabs2.length
           else idx = (idx + 1) % tabs2.length
@@ -243,7 +339,7 @@ BarWidget {
 
       Row {
         id: popupRow
-        height: 320
+        height: 380
         anchors.top: heroRule.bottom
         anchors.topMargin: Style.space(10)
         anchors.left: parent.left
@@ -266,6 +362,7 @@ BarWidget {
               { id: "players", icon: "󰓃", label: "Players" },
               { id: "queue", icon: "󰐐", label: "Queue" },
               { id: "search", icon: "󰍉", label: "Search" },
+              { id: "browse", icon: "󰉋", label: "Browse" },
               { id: "favorites", icon: "󰋑", label: "Favs" },
               { id: "playlists", icon: "󰲸", label: "Lists" },
               { id: "recent", icon: "󰋚", label: "Recent" }
@@ -374,6 +471,81 @@ BarWidget {
                   onChangeVolume: function(percent) { if (root.service) root.service.setVolumeLocal(root.service.activePlayerId, percent) }
                   onToggleMute: if (root.service) root.service.toggleMute(root.service.activePlayerId)
                 }
+
+                // Queue options (player_queues/crossfade, autoplay,
+                // dont_stop_the_music), the sleep timer and stop.
+                Flow {
+                  width: parent.width
+                  spacing: Style.space(4)
+                  visible: root.serviceReady && root.service && root.service.activePlayer !== null
+
+                  Chip {
+                    label: "Crossfade"
+                    active: root.service ? root.service.crossfadeEnabled : false
+                    onClicked: root.service.setCrossfade(!active)
+                  }
+                  Chip {
+                    label: "Autoplay"
+                    active: root.service ? root.service.autoplayEnabled : false
+                    onClicked: root.service.setAutoplay(!active)
+                  }
+                  Chip {
+                    label: "Don't stop"
+                    active: root.service ? root.service.dontStopTheMusicEnabled : false
+                    onClicked: root.service.setDontStopTheMusic(!active)
+                  }
+                  Chip {
+                    icon: "󰒲"
+                    label: root.service && root.service.sleepRemainingSeconds > 0
+                      ? Math.ceil(root.service.sleepRemainingSeconds / 60) + " min"
+                      : "Sleep"
+                    active: root.service ? root.service.sleepRemainingSeconds > 0 : false
+                    // Cycles 15 → 30 → 60 → 90 min → off.
+                    onClicked: {
+                      var r = root.service.sleepRemainingSeconds
+                      var next = r <= 0 ? 15 : (r <= 15 * 60 ? 30 : (r <= 30 * 60 ? 60 : (r <= 60 * 60 ? 90 : 0)))
+                      root.service.setSleepTimer(next * 60)
+                    }
+                  }
+                  Chip {
+                    icon: "󰓛"
+                    label: "Stop"
+                    enabled: root.isPlaying || (root.service && root.service.isPaused)
+                    onClicked: root.service.stop(root.service.activePlayerId)
+                  }
+                }
+
+                // Native inputs of the player (Sonos line-in / TV ...).
+                // "Queue" hands control back to Music Assistant.
+                Flow {
+                  width: parent.width
+                  spacing: Style.space(4)
+                  visible: root.serviceReady && root.activePlayer && root.activePlayer.source_list && root.activePlayer.source_list.length > 0
+
+                  Text {
+                    text: "SOURCE"
+                    color: Qt.darker(root.bar.foreground, 1.3)
+                    font.family: root.bar.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                    height: Style.space(24)
+                    verticalAlignment: Text.AlignVCenter
+                  }
+                  Chip {
+                    label: "Queue"
+                    active: !root.nativeSourceActive
+                    onClicked: root.service.selectSource(null)
+                  }
+                  Repeater {
+                    model: root.activePlayer && root.activePlayer.source_list ? root.activePlayer.source_list : []
+                    delegate: Chip {
+                      required property var modelData
+                      label: modelData.name
+                      active: root.activePlayer ? root.activePlayer.active_source === modelData.id : false
+                      onClicked: root.service.selectSource(modelData.id)
+                    }
+                  }
+                }
               }
   
               // ------------------ Players section
@@ -388,8 +560,8 @@ BarWidget {
                 }
   
                 Repeater {
-                  model: root.service ? root.service.players : []
-  
+                  model: root.sortedPlayers()
+
                   delegate: BorderSurface {
                     id: playerRow
                     required property var modelData
@@ -397,13 +569,28 @@ BarWidget {
                     readonly property bool isActive: root.service && player.player_id === root.service.activePlayerId
                     readonly property bool available: player.available === true
                     readonly property bool playingHere: player.playback_state === "playing"
-                    readonly property bool groupPlayer: player.group_members && player.group_members.length > 1
+                    readonly property bool groupPlayer: player.group_members && player.group_members.length > 0
                     readonly property int vol: MaApi.volumePercent(player)
-                    readonly property string rowTitle: player.name + (groupPlayer ? " (" + player.group_members.length + " players)" : "")
+                    readonly property string rowTitle: player.name + (groupPlayer ? " (" + player.group_members.length + ")" : "")
+                    readonly property string leaderName: {
+                      var lid = player.synced_to || player.active_group
+                      var l = lid && root.service ? root.service.playerById(lid) : null
+                      return l ? l.name : ""
+                    }
                     readonly property string rowDetail: {
+                      if (!available) return "unavailable"
+                      if (leaderName !== "") return "grouped with " + leaderName
                       var m = player.current_media
-                      if (!m) return available ? (player.synced_to ? "synced" : "idle") : "unavailable"
+                      if (!m) return "idle"
                       return (m.artist ? m.artist + " — " : "") + (m.title || m.uri || "")
+                    }
+                    // Grouping relative to the active player.
+                    readonly property string groupMode: {
+                      if (!root.service || !available) return ""
+                      if (isActive) return groupPlayer ? "ungroup" : ""
+                      if (root.service.isGroupedWithActive(player.player_id)) return "leave"
+                      if (root.service.canGroupWithActive(player.player_id)) return "join"
+                      return ""
                     }
   
                     width: parent.width
@@ -437,10 +624,10 @@ BarWidget {
                       }
   
                       Column {
-                        width: parent.width - Style.space(34)
+                        width: parent.width - Style.space(34) - (groupBtn.visible ? groupBtn.width + Style.space(8) : 0)
                         spacing: Style.space(1)
                         anchors.verticalCenter: parent.verticalCenter
-  
+
                         Text {
                           text: playerRow.rowTitle
                           color: root.bar.foreground
@@ -480,7 +667,40 @@ BarWidget {
                         }
                       }
                     }
+
+                    // Join / Leave / Ungroup. Declared after the row's MouseArea
+                    // so it receives the click.
+                    Button {
+                      id: groupBtn
+                      visible: playerRow.groupMode !== ""
+                      text: playerRow.groupMode === "join" ? "Join" : (playerRow.groupMode === "leave" ? "Leave" : "Ungroup")
+                      tooltipText: playerRow.groupMode === "join" ? "Group with " + (root.activePlayer ? root.activePlayer.name : "the active player")
+                        : (playerRow.groupMode === "leave" ? "Leave the group" : "Dissolve the group")
+                      foreground: root.bar.foreground
+                      fontSize: Style.font.caption
+                      bordered: true
+                      horizontalPadding: Style.space(6)
+                      verticalPadding: Style.space(2)
+                      anchors.right: parent.right
+                      anchors.rightMargin: playerRow.borderRight + Style.space(8)
+                      anchors.verticalCenter: parent.verticalCenter
+                      onClicked: {
+                        if (!root.service) return
+                        if (playerRow.groupMode === "join") root.service.groupAdd(playerRow.player.player_id)
+                        else if (playerRow.groupMode === "leave") root.service.groupRemove(playerRow.player.player_id)
+                        else root.service.ungroup(playerRow.player.player_id)
+                      }
+                    }
                   }
+                }
+
+                Text {
+                  width: parent.width
+                  wrapMode: Text.WordWrap
+                  text: "Click a player to make it active (moves the queue). Right-click mutes. Join / Leave group speakers with the active player."
+                  color: Qt.darker(root.bar.foreground, 1.5)
+                  font.family: root.bar.fontFamily
+                  font.pixelSize: Style.font.caption
                 }
               }
   
@@ -500,7 +720,21 @@ BarWidget {
                     font.bold: true
                     anchors.verticalCenter: parent.verticalCenter
                   }
-                  Item { width: 1; height: 1 }
+                  Item { width: Style.space(8); height: 1 }
+                  Button {
+                    text: "Save"
+                    tooltipText: "Save the queue as a playlist"
+                    foreground: root.bar.foreground
+                    horizontalPadding: Style.spacing.controlPaddingX
+                    verticalPadding: Style.spacing.controlPaddingY
+                    enabled: root.serviceReady && root.service && root.service.queue.length > 0
+                    opacity: enabled ? 1.0 : 0.4
+                    active: root.queueSaveOpen
+                    onClicked: {
+                      root.queueSaveOpen = !root.queueSaveOpen
+                      if (root.queueSaveOpen) Qt.callLater(function() { queueSaveName.forceActiveFocus() })
+                    }
+                  }
                   Button {
                     text: "Clear"
                     foreground: root.bar.foreground
@@ -509,6 +743,22 @@ BarWidget {
                     enabled: root.serviceReady && root.service && root.service.queue.length > 0
                     opacity: enabled ? 1.0 : 0.4
                     onClicked: if (root.service) root.service.clearQueue(root.service.activePlayerId)
+                  }
+                }
+
+                TextField {
+                  id: queueSaveName
+                  width: parent.width
+                  visible: root.queueSaveOpen
+                  placeholderText: "Playlist name, then Enter"
+                  foreground: root.bar.foreground
+                  onAccepted: {
+                    if (root.service && text.length > 0) root.service.saveQueueAsPlaylist(text)
+                    text = ""
+                    root.queueSaveOpen = false
+                  }
+                  Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Escape) { root.queueSaveOpen = false; event.accepted = true }
                   }
                 }
   
@@ -558,7 +808,7 @@ BarWidget {
                         anchors.verticalCenter: parent.verticalCenter
                       }
                       Column {
-                        width: parent.width - Style.space(58)
+                        width: parent.width - Style.space(58) - queueActions.width - Style.space(8)
                         spacing: Style.space(1)
                         anchors.verticalCenter: parent.verticalCenter
                         Text {
@@ -593,6 +843,58 @@ BarWidget {
                         } else {
                           root.service.playIndex(root.service.activePlayerId, queueRow.index)
                         }
+                      }
+                    }
+
+                    // Move up / down / to end / remove. After the MouseArea so
+                    // the buttons get the click.
+                    Row {
+                      id: queueActions
+                      spacing: 0
+                      anchors.right: parent.right
+                      anchors.rightMargin: queueRow.borderRight + Style.space(4)
+                      anchors.verticalCenter: parent.verticalCenter
+                      Button {
+                        iconText: "󰅃"
+                        tooltipText: "Move up"
+                        foreground: root.bar.foreground
+                        iconSize: Style.font.caption
+                        horizontalPadding: Style.space(3)
+                        verticalPadding: Style.space(2)
+                        enabled: queueRow.index > 0
+                        opacity: enabled ? 1.0 : 0.3
+                        onClicked: if (root.service) root.service.moveQueueItem(queueRow.modelData.queue_item_id, -1)
+                      }
+                      Button {
+                        iconText: "󰅀"
+                        tooltipText: "Move down"
+                        foreground: root.bar.foreground
+                        iconSize: Style.font.caption
+                        horizontalPadding: Style.space(3)
+                        verticalPadding: Style.space(2)
+                        enabled: root.service && queueRow.index < root.service.queue.length - 1
+                        opacity: enabled ? 1.0 : 0.3
+                        onClicked: if (root.service) root.service.moveQueueItem(queueRow.modelData.queue_item_id, 1)
+                      }
+                      Button {
+                        iconText: "󰘁"
+                        tooltipText: "Move to end"
+                        foreground: root.bar.foreground
+                        iconSize: Style.font.caption
+                        horizontalPadding: Style.space(3)
+                        verticalPadding: Style.space(2)
+                        enabled: root.service && queueRow.index < root.service.queue.length - 1
+                        opacity: enabled ? 1.0 : 0.3
+                        onClicked: if (root.service) root.service.moveQueueItemEnd(queueRow.modelData.queue_item_id)
+                      }
+                      Button {
+                        iconText: "󰅖"
+                        tooltipText: "Remove from queue"
+                        foreground: root.bar.foreground
+                        iconSize: Style.font.caption
+                        horizontalPadding: Style.space(3)
+                        verticalPadding: Style.space(2)
+                        onClicked: if (root.service) root.service.deleteQueueItem(root.service.activePlayerId, queueRow.modelData.queue_item_id)
                       }
                     }
                   }
@@ -745,6 +1047,8 @@ BarWidget {
                     type: MaApi.mediaTypeLabel(modelData.media_type || "track")
                     source: MaApi.providerLabel(MaApi.providerDomain(modelData))
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
+                    onContextMenu: function(mouse) { if (root.service) root.service.enqueue(modelData.uri, "next", modelData.name) }
+                    onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)
                   }
                 }
   
@@ -765,6 +1069,8 @@ BarWidget {
                     type: MaApi.mediaTypeLabel(modelData.media_type || "album")
                     source: MaApi.providerLabel(MaApi.providerDomain(modelData))
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
+                    onContextMenu: function(mouse) { if (root.service) root.service.enqueue(modelData.uri, "next", modelData.name) }
+                    onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)
                   }
                 }
   
@@ -785,6 +1091,8 @@ BarWidget {
                     type: MaApi.mediaTypeLabel(modelData.media_type || "playlist")
                     source: MaApi.providerLabel(MaApi.providerDomain(modelData))
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
+                    onContextMenu: function(mouse) { if (root.service) root.service.enqueue(modelData.uri, "next", modelData.name) }
+                    onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)
                   }
                 }
   
@@ -805,6 +1113,8 @@ BarWidget {
                     type: MaApi.mediaTypeLabel(modelData.media_type || "artist")
                     source: MaApi.providerLabel(MaApi.providerDomain(modelData))
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
+                    onContextMenu: function(mouse) { if (root.service) root.service.enqueue(modelData.uri, "next", modelData.name) }
+                    onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)
                   }
                 }
   
@@ -825,6 +1135,8 @@ BarWidget {
                     type: MaApi.mediaTypeLabel(modelData.media_type || "")
                     source: MaApi.providerLabel(MaApi.providerDomain(modelData))
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
+                    onContextMenu: function(mouse) { if (root.service) root.service.enqueue(modelData.uri, "next", modelData.name) }
+                    onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)
                   }
                 }
 
@@ -846,7 +1158,7 @@ BarWidget {
                   text: {
                     if (!root.service) return ""
                     var r = root.service.searchResults
-                    if (!r) return root.service.searchQuery ? "Searching…" : "Type a query and press Enter."
+                    if (!r) return root.service.searchQuery ? "Searching…" : "Type a query and press Enter. Click plays, right-click plays next, middle-click adds to the queue."
                     var total = 0
                     for (var k in r) if (Array.isArray(r[k])) total += r[k].length
                     return total === 0 ? "No results." : ""
@@ -857,6 +1169,98 @@ BarWidget {
                 }
               }
   
+              // ------------------ Browse section
+              Column {
+                id: browseTab
+                width: parent.width
+                spacing: Style.space(6)
+                visible: root.popupSection === "browse"
+
+                Row {
+                  width: parent.width
+                  spacing: Style.space(6)
+                  Button {
+                    id: browseBackBtn
+                    iconText: "󰁍"
+                    tooltipText: "Back"
+                    foreground: root.bar.foreground
+                    horizontalPadding: Style.spacing.controlPaddingX
+                    verticalPadding: Style.spacing.controlPaddingY
+                    enabled: root.service && root.service.browseStack.length > 0
+                    opacity: enabled ? 1.0 : 0.4
+                    anchors.verticalCenter: parent.verticalCenter
+                    onClicked: { root.browseFilter = ""; browseFilterInput.text = ""; root.service.browseBack() }
+                  }
+                  Text {
+                    width: parent.width - browseBackBtn.width - Style.space(6)
+                    text: root.service ? (root.service.browseName || "Music Assistant") + (root.service.browseLoading ? "  …" : "") : ""
+                    color: root.bar.foreground
+                    font.family: root.bar.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    font.bold: true
+                    elide: Text.ElideMiddle
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                }
+
+                TextField {
+                  id: browseFilterInput
+                  width: parent.width
+                  visible: root.service && root.service.browseItems.length > 12
+                  placeholderText: "Filter " + (root.service ? root.service.browseItems.length : 0) + " items…"
+                  foreground: root.bar.foreground
+                  onTextChanged: root.browseFilter = text
+                  Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Escape) { root.popupOpen = false; event.accepted = true }
+                  }
+                }
+
+                Component {
+                  id: browseDelegate
+                  SearchResultRow {
+                    required property var modelData
+                    required property int index
+                    readonly property bool folder: modelData.media_type === "folder"
+                    bar: root.bar
+                    imageUrl: modelData.image_url || ""
+                    title: (folder ? "󰉋  " : "") + (modelData.name || "?")
+                    subtitle: folder ? "" : (modelData.artist || "") + (modelData.album ? " — " + modelData.album : "")
+                    showTypeBadge: !folder
+                    type: MaApi.mediaTypeLabel(modelData.media_type || "")
+                    source: folder ? "" : MaApi.providerLabel(MaApi.providerDomain(modelData))
+                    onClicked: {
+                      if (!root.service) return
+                      if (folder) { root.browseFilter = ""; browseFilterInput.text = ""; root.service.browseInto(modelData) }
+                      else if (modelData.is_playable) root.service.playUri(root.service.activePlayerId, modelData.uri)
+                    }
+                    onContextMenu: function(mouse) { if (root.service && !folder) root.service.enqueue(modelData.uri, "next", modelData.name) }
+                    onMiddleClicked: if (root.service && !folder) root.service.enqueue(modelData.uri, "add", modelData.name)
+                  }
+                }
+
+                Repeater {
+                  model: root.filteredBrowseItems()
+                  delegate: browseDelegate
+                }
+
+                Text {
+                  width: parent.width
+                  wrapMode: Text.WordWrap
+                  text: {
+                    if (!root.service) return ""
+                    if (root.service.browseLoading && root.service.browseItems.length === 0) return "Loading…"
+                    var n = root.service.browseItems.length
+                    if (n === 0) return "Nothing here."
+                    var shown = root.filteredBrowseItems().length
+                    return shown < n ? "Showing " + shown + " of " + n + ". Type to filter." : ""
+                  }
+                  color: Qt.darker(root.bar.foreground, 1.4)
+                  font.family: root.bar.fontFamily
+                  font.pixelSize: Style.font.caption
+                  visible: text !== ""
+                }
+              }
+
               // ------------------ Favorites section
               Column {
                 id: favoritesTab
@@ -919,10 +1323,11 @@ BarWidget {
                     showTypeBadge: false
                     source: MaApi.providerLabel(MaApi.providerDomain(modelData))
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
-                    // Right-click removes the favorite.
+                    // Right-click removes the favorite; middle-click adds it to the queue.
                     onContextMenu: function(mouse) {
                       if (root.service) root.service.removeFavorite(modelData)
                     }
+                    onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)
                   }
                 }
   
@@ -934,7 +1339,7 @@ BarWidget {
                 Text {
                   visible: !root.service || !root.service.favorites || !(root.service.favorites[root.favFilter] || []).length
                   width: parent.width
-                  text: root.service ? "No " + root.favFilter + " favorites yet." : "Loading…"
+                  text: root.service ? "No " + root.favFilter + " favorites yet. Right-click a favorite to remove it; middle-click adds it to the queue." : "Loading…"
                   color: Qt.darker(root.bar.foreground, 1.4)
                   font.family: root.bar.fontFamily
                   font.pixelSize: Style.font.caption
@@ -948,6 +1353,8 @@ BarWidget {
                 spacing: Style.space(4)
                 visible: root.popupSection === "playlists"
   
+                readonly property bool drilled: root.service && root.service.drillItem !== null
+
                 Component {
                   id: playlistDelegate
                   SearchResultRow {
@@ -959,25 +1366,102 @@ BarWidget {
                     subtitle: modelData.owner || MaApi.providerLabel(MaApi.providerDomain(modelData))
                     showTypeBadge: false
                     showSourceBadge: true
-                    onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
+                    source: MaApi.providerLabel(MaApi.providerDomain(modelData))
+                    // Click opens the tracks; right-click adds the playing track
+                    // to a library playlist; middle-click queues the playlist.
+                    onClicked: if (root.service) root.service.openCollection(modelData)
+                    onContextMenu: function(mouse) { if (root.service) root.service.addCurrentToPlaylist(modelData) }
+                    onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)
                   }
                 }
-  
+
                 Repeater {
-                  model: root.service ? root.service.playlists : []
+                  model: root.service && !playlistsTab.drilled ? root.service.playlists : []
                   delegate: playlistDelegate
                 }
-  
+
                 Text {
-                  visible: !root.service || !root.service.playlists || root.service.playlists.length === 0
+                  visible: !playlistsTab.drilled && (!root.service || !root.service.playlists || root.service.playlists.length === 0)
                   width: parent.width
                   text: root.service ? "No playlists found." : "Loading…"
                   color: Qt.darker(root.bar.foreground, 1.4)
                   font.family: root.bar.fontFamily
                   font.pixelSize: Style.font.caption
                 }
+
+                Text {
+                  visible: !playlistsTab.drilled && root.service && root.service.playlists.length > 0
+                  width: parent.width
+                  wrapMode: Text.WordWrap
+                  text: "Click opens a playlist. Right-click adds the playing track to it (library playlists). Middle-click queues it."
+                  color: Qt.darker(root.bar.foreground, 1.5)
+                  font.family: root.bar.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                // Drill-down: tracks of the opened playlist / album / artist.
+                Row {
+                  visible: playlistsTab.drilled
+                  width: parent.width
+                  spacing: Style.space(6)
+                  Button {
+                    id: drillBackBtn
+                    iconText: "󰁍"
+                    tooltipText: "Back"
+                    foreground: root.bar.foreground
+                    horizontalPadding: Style.spacing.controlPaddingX
+                    verticalPadding: Style.spacing.controlPaddingY
+                    anchors.verticalCenter: parent.verticalCenter
+                    onClicked: if (root.service) root.service.closeCollection()
+                  }
+                  Text {
+                    width: parent.width - drillBackBtn.width - drillPlayBtn.width - Style.space(12)
+                    text: root.service && root.service.drillItem ? root.service.drillItem.name + (root.service.drillLoading ? "  …" : "") : ""
+                    color: root.bar.foreground
+                    font.family: root.bar.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    font.bold: true
+                    elide: Text.ElideRight
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                  Button {
+                    id: drillPlayBtn
+                    text: "Play all"
+                    foreground: root.bar.foreground
+                    horizontalPadding: Style.spacing.controlPaddingX
+                    verticalPadding: Style.spacing.controlPaddingY
+                    anchors.verticalCenter: parent.verticalCenter
+                    onClicked: if (root.service && root.service.drillItem) root.service.playUri(root.service.activePlayerId, root.service.drillItem.uri)
+                  }
+                }
+
+                Repeater {
+                  model: root.service && playlistsTab.drilled ? root.service.drillItems : []
+                  delegate: SearchResultRow {
+                    required property var modelData
+                    required property int index
+                    bar: root.bar
+                    imageUrl: modelData.image_url || ""
+                    title: (modelData.track_number ? modelData.track_number + ". " : "") + (modelData.name || "?")
+                    subtitle: (modelData.artist || "") + (modelData.album ? " — " + modelData.album : "")
+                    showTypeBadge: false
+                    source: MaApi.providerLabel(MaApi.providerDomain(modelData))
+                    onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
+                    onContextMenu: function(mouse) { if (root.service) root.service.enqueue(modelData.uri, "next", modelData.name) }
+                    onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)
+                  }
+                }
+
+                Text {
+                  visible: playlistsTab.drilled && root.service && !root.service.drillLoading && root.service.drillItems.length === 0
+                  width: parent.width
+                  text: "No tracks."
+                  color: Qt.darker(root.bar.foreground, 1.4)
+                  font.family: root.bar.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
               }
-  
+
               // ------------------ Recent section
               Column {
                 id: recentTab
@@ -997,6 +1481,8 @@ BarWidget {
                     showTypeBadge: true
                     showSourceBadge: true
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
+                    onContextMenu: function(mouse) { if (root.service) root.service.enqueue(modelData.uri, "next", modelData.name) }
+                    onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)
                   }
                 }
   
