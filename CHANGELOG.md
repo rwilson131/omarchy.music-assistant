@@ -5,6 +5,11 @@ All notable changes to this plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Media-key installation and removal now validate that the marked block is complete and unique before editing `bindings.lua`. Malformed markers fail closed instead of risking truncation. Successful changes use a same-directory temporary file, atomic rename, preserved permissions and a rollback backup.
+
 ## [1.1.5] - 2026-10-08
 
 ### Added

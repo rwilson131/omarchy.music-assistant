@@ -143,9 +143,16 @@ Hyprland:
 Off removes the block and reloads. The state is `installMediaKeys` in
 `config.json`, so you can also set it there. A block already on disk at
 startup (an upgrade from 1.0.x, or a reinstall) turns the switch on and
-rewrites the block for the current install. Turn the switch off before
-`omarchy plugin remove` if you want the keys back with Omarchy; removing
-the plugin does not edit `bindings.lua`.
+rewrites the block for the current install.
+
+Before every successful install, update, or removal, the plugin keeps a
+`bindings.lua.bak.music-assistant.*` rollback copy beside `bindings.lua` and
+replaces the file atomically without changing its permissions. If the marker
+block is incomplete, duplicated, or reversed, the plugin leaves the file
+untouched and reports the problem instead of guessing what to remove.
+
+Turn the switch off before `omarchy plugin remove` if you want the keys back
+with Omarchy; removing the plugin does not edit `bindings.lua`.
 
 ## Security
 

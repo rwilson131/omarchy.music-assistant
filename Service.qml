@@ -276,50 +276,90 @@ Item {
   }
 
   // awk programs for the scripts below: print the block, or everything but
-  // the block, between the two markers (matched at line start).
-  readonly property string mediaKeysAwkBlock: "index($0,b)==1{p=1} p{print} index($0,e)==1{p=0}"
-  readonly property string mediaKeysAwkOutside: "index($0,b)==1{p=1} !p{print} index($0,e)==1{p=0}"
+  // the block, between exact marker lines. Marker validation runs first, so
+  // these never consume an unmatched block and truncate the rest of the file.
+  readonly property string mediaKeysAwkBlock: "$0==b{p=1} p{print} $0==e{p=0}"
+  readonly property string mediaKeysAwkOutside: "$0==b{p=1} !p{print} $0==e{p=0}"
 
   function mediaKeysShellPrelude() {
     return "set -e\n" +
       "F='" + root.hyprBindingsPath.replace(/'/g, "'\\''") + "'\n" +
       "B='" + root.mediaKeysMarkerBegin + "'\n" +
-      "E='" + root.mediaKeysMarkerEnd + "'\n"
+      "E='" + root.mediaKeysMarkerEnd + "'\n" +
+      "DIR=$(dirname -- \"$F\")\n" +
+      "BASE=$(basename -- \"$F\")\n" +
+      "BLOCK= CURRENT= EXPECTED= NEXT=\n" +
+      "cleanup() {\n" +
+      "  for path in \"$BLOCK\" \"$CURRENT\" \"$EXPECTED\" \"$NEXT\"; do\n" +
+      "    [ -z \"$path\" ] || rm -f -- \"$path\"\n" +
+      "  done\n" +
+      "}\n" +
+      "trap cleanup EXIT\n" +
+      "new_temp() { mktemp -p \"$DIR\" \".$BASE.music-assistant.XXXXXXXXXX\"; }\n" +
+      "validate_markers() {\n" +
+      "  BEGIN_COUNT=$(grep -cFx -- \"$B\" \"$F\" || true)\n" +
+      "  END_COUNT=$(grep -cFx -- \"$E\" \"$F\" || true)\n" +
+      "  if [ \"$BEGIN_COUNT\" -ne \"$END_COUNT\" ] || [ \"$BEGIN_COUNT\" -gt 1 ]; then return 45; fi\n" +
+      "  if [ \"$BEGIN_COUNT\" -eq 1 ]; then\n" +
+      "    begin_line=$(grep -nFx -m1 -- \"$B\" \"$F\" | cut -d: -f1)\n" +
+      "    end_line=$(grep -nFx -m1 -- \"$E\" \"$F\" | cut -d: -f1)\n" +
+      "    [ \"$begin_line\" -lt \"$end_line\" ] || return 45\n" +
+      "  fi\n" +
+      "}\n" +
+      "commit_edit() {\n" +
+      "  edited=$1\n" +
+      "  chmod --reference=\"$F\" \"$edited\"\n" +
+      "  backup=$(mktemp -p \"$DIR\" \"$BASE.bak.music-assistant.XXXXXXXXXX\")\n" +
+      "  cp -p -- \"$F\" \"$backup\"\n" +
+      "  mv -f -- \"$edited\" \"$F\"\n" +
+      "}\n"
   }
 
-  // Exit 0 = already current, 42 = installed, 43 = replaced an older block.
+  // Exit 0 = already current, 42 = installed, 43 = replaced an older block,
+  // 45 = malformed markers (the bindings file is deliberately left untouched).
   readonly property string mediaKeysInstallScript: {
     var block = root.mediaKeysBindingsBlock().replace(/'/g, "'\\''")
     return root.mediaKeysShellPrelude() +
       "if [ ! -f \"$F\" ]; then exit 0; fi\n" +
-      "T=$(mktemp); C=$(mktemp); D=$(mktemp)\n" +
-      "trap 'rm -f \"$T\" \"$C\" \"$D\"' EXIT\n" +
-      "printf '%s\\n' '" + block + "' > \"$T\"\n" +
+      "validate_markers || exit $?\n" +
+      "BLOCK=$(new_temp)\n" +
+      "printf '%s\\n' '" + block + "' > \"$BLOCK\"\n" +
       "status=42\n" +
-      "if grep -qF -e \"$B\" \"$F\"; then\n" +
-      "  awk -v b=\"$B\" -v e=\"$E\" '" + root.mediaKeysAwkBlock + "' \"$F\" > \"$C\"\n" +
-      "  awk -v b=\"$B\" -v e=\"$E\" '" + root.mediaKeysAwkBlock + "' \"$T\" > \"$D\"\n" +
-      "  if cmp -s \"$C\" \"$D\"; then exit 0; fi\n" +
-      "  awk -v b=\"$B\" -v e=\"$E\" '" + root.mediaKeysAwkOutside + "' \"$F\" > \"$F.tmp\" && mv -f \"$F.tmp\" \"$F\"\n" +
+      "NEXT=$(new_temp)\n" +
+      "if [ \"$BEGIN_COUNT\" -eq 1 ]; then\n" +
+      "  CURRENT=$(new_temp)\n" +
+      "  EXPECTED=$(new_temp)\n" +
+      "  awk -v b=\"$B\" -v e=\"$E\" '" + root.mediaKeysAwkBlock + "' \"$F\" > \"$CURRENT\"\n" +
+      "  awk -v b=\"$B\" -v e=\"$E\" '" + root.mediaKeysAwkBlock + "' \"$BLOCK\" > \"$EXPECTED\"\n" +
+      "  if cmp -s \"$CURRENT\" \"$EXPECTED\"; then exit 0; fi\n" +
+      "  awk -v b=\"$B\" -v e=\"$E\" '" + root.mediaKeysAwkOutside + "' \"$F\" > \"$NEXT\"\n" +
       "  status=43\n" +
+      "else\n" +
+      "  cat -- \"$F\" > \"$NEXT\"\n" +
       "fi\n" +
-      "if [ -s \"$F\" ] && [ -n \"$(tail -c 1 \"$F\")\" ]; then echo >> \"$F\"; fi\n" +
-      "cat \"$T\" >> \"$F\"\n" +
+      "if [ -s \"$NEXT\" ] && [ -n \"$(tail -c 1 \"$NEXT\")\" ]; then echo >> \"$NEXT\"; fi\n" +
+      "cat -- \"$BLOCK\" >> \"$NEXT\"\n" +
+      "commit_edit \"$NEXT\"\n" +
       "hyprctl reload >/dev/null 2>&1 || true\n" +
       "exit $status\n"
   }
 
-  // Exit 0 = nothing to do, 44 = removed.
+  // Exit 0 = nothing to do, 44 = removed, 45 = malformed markers.
   readonly property string mediaKeysUninstallScript: root.mediaKeysShellPrelude() +
     "if [ ! -f \"$F\" ]; then exit 0; fi\n" +
-    "grep -qF -e \"$B\" \"$F\" || exit 0\n" +
-    "awk -v b=\"$B\" -v e=\"$E\" '" + root.mediaKeysAwkOutside + "' \"$F\" > \"$F.tmp\" && mv -f \"$F.tmp\" \"$F\"\n" +
+    "validate_markers || exit $?\n" +
+    "[ \"$BEGIN_COUNT\" -eq 1 ] || exit 0\n" +
+    "NEXT=$(new_temp)\n" +
+    "awk -v b=\"$B\" -v e=\"$E\" '" + root.mediaKeysAwkOutside + "' \"$F\" > \"$NEXT\"\n" +
+    "commit_edit \"$NEXT\"\n" +
     "hyprctl reload >/dev/null 2>&1 || true\n" +
     "exit 44\n"
 
-  // Exit 0 = a block is present, 1 = not.
+  // Exit 0 = one valid block is present, 1 = none, 45 = malformed markers.
   readonly property string mediaKeysProbeScript: root.mediaKeysShellPrelude() +
-    "[ -f \"$F\" ] && grep -qF -e \"$B\" \"$F\"\n"
+    "[ -f \"$F\" ] || exit 1\n" +
+    "validate_markers || exit $?\n" +
+    "[ \"$BEGIN_COUNT\" -eq 1 ]\n"
 
   Process {
     id: mediaKeysInstaller
@@ -335,6 +375,10 @@ Item {
         console.log("[music-assistant] Media key bindings updated")
         root.showOsd("Media keys updated", "input-keyboard",
           "Volume keys now follow Music Assistant only while it is playing")
+      } else if (exitCode === 45) {
+        console.warn("[music-assistant] Media key markers are malformed; bindings.lua was not changed")
+        root.showOsd("Media keys unchanged", "dialog-warning",
+          "The Music Assistant marker block in bindings.lua is incomplete or duplicated")
       } else {
         console.warn("[music-assistant] Failed to install media key bindings: exitCode=" + exitCode)
       }
@@ -349,6 +393,10 @@ Item {
       if (exitCode === 44) {
         console.log("[music-assistant] Media key bindings removed")
         root.showOsd("Media keys off", "input-keyboard", "Keyboard media keys returned to Omarchy")
+      } else if (exitCode === 45) {
+        console.warn("[music-assistant] Media key markers are malformed; bindings.lua was not changed")
+        root.showOsd("Media keys unchanged", "dialog-warning",
+          "The Music Assistant marker block in bindings.lua is incomplete or duplicated")
       } else if (exitCode !== 0) {
         console.warn("[music-assistant] Failed to remove media key bindings: exitCode=" + exitCode)
       }
@@ -367,6 +415,8 @@ Item {
     onExited: function(exitCode) {
       if (exitCode === 0 && root.ready && root.config && !root.mediaKeysEnabled)
         root.setMediaKeysEnabled(true)
+      else if (exitCode === 45)
+        console.warn("[music-assistant] Media key markers are malformed; automatic repair was skipped")
     }
   }
 
