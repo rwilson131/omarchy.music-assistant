@@ -362,10 +362,11 @@ BarWidget {
                   isPlaying: root.isPlaying
                   shuffleEnabled: root.service ? root.service.shuffleEnabled : false
                   repeatMode: root.service ? root.service.repeatMode : "off"
+                  isFavorite: root.service ? root.service.currentFavorite : false
                   onPlayPause: if (root.service) root.service.playPause()
                   onNext: if (root.service) root.service.next()
                   onPrevious: if (root.service) root.service.previous()
-                  onSeek: function(ms) { if (root.service) root.service.seek(root.service.activePlayerId, ms) }
+                  onSeek: function(seconds) { if (root.service) root.service.seek(root.service.activePlayerId, seconds) }
                   onToggleShuffle: if (root.service) root.service.toggleShuffle()
                   onCycleRepeat: if (root.service) root.service.cycleRepeat()
                   onFavoriteCurrent: if (root.service) root.service.favoriteCurrent()
@@ -656,7 +657,7 @@ BarWidget {
                 }
   
                 // Filter chips
-                Row {
+                Flow {
                   width: parent.width
                   spacing: Style.space(4)
   
@@ -664,19 +665,23 @@ BarWidget {
                     model: {
                       if (!root.service || !root.service.searchResults) return []
                       var r = root.service.searchResults
+                      function n(k) { return r[k] ? r[k].length : 0 }
                       return [
-                        { id: "all", label: "All", count: (r.tracks ? r.tracks.length : 0) + (r.albums ? r.albums.length : 0) + (r.artists ? r.artists.length : 0) + (r.playlists ? r.playlists.length : 0) },
-                        { id: "track", label: "Songs", count: r.tracks ? r.tracks.length : 0 },
-                        { id: "album", label: "Albums", count: r.albums ? r.albums.length : 0 },
-                        { id: "artist", label: "Artists", count: r.artists ? r.artists.length : 0 },
-                        { id: "playlist", label: "Playlists", count: r.playlists ? r.playlists.length : 0 }
+                        { id: "all", label: "All", count: n("tracks") + n("albums") + n("artists") + n("playlists") + n("radio") + n("podcasts") + n("audiobooks") },
+                        { id: "track", label: "Songs", count: n("tracks") },
+                        { id: "album", label: "Albums", count: n("albums") },
+                        { id: "artist", label: "Artists", count: n("artists") },
+                        { id: "playlist", label: "Lists", count: n("playlists") },
+                        { id: "radio", label: "Radio", count: n("radio") },
+                        { id: "podcast", label: "Pods", count: n("podcasts") },
+                        { id: "audiobook", label: "Books", count: n("audiobooks") }
                       ]
                     }
   
                     delegate: BorderSurface {
                       required property var modelData
                       readonly property bool active: root.searchFilter === modelData.id
-                      width: (parent.width - Style.space(16)) / 5
+                      width: chipRow.implicitWidth + Style.space(12)
                       height: Style.space(26)
                       radius: Style.cornerRadius
                       color: active
@@ -688,6 +693,7 @@ BarWidget {
                       visible: modelData.count > 0
   
                       Row {
+                        id: chipRow
                         anchors.centerIn: parent
                         spacing: Style.space(3)
                         Text {
@@ -735,7 +741,7 @@ BarWidget {
                     bar: root.bar
                     imageUrl: modelData.image_url || ""
                     title: modelData.name || modelData.title || "?"
-                    subtitle: (modelData.artists ? modelData.artists.map(function(a){return a.name}).join(", ") : "") + (modelData.album ? " — " + (modelData.album.name || "") : "")
+                    subtitle: (modelData.artist || "") + (modelData.album ? " — " + modelData.album : "")
                     type: MaApi.mediaTypeLabel(modelData.media_type || "track")
                     source: MaApi.providerLabel(MaApi.providerDomain(modelData))
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
@@ -755,7 +761,7 @@ BarWidget {
                     bar: root.bar
                     imageUrl: modelData.image_url || ""
                     title: modelData.name || "?"
-                    subtitle: modelData.artists ? modelData.artists.map(function(a){return a.name}).join(", ") : ""
+                    subtitle: (modelData.artist || "") + (modelData.year ? " · " + modelData.year : "")
                     type: MaApi.mediaTypeLabel(modelData.media_type || "album")
                     source: MaApi.providerLabel(MaApi.providerDomain(modelData))
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
@@ -775,7 +781,7 @@ BarWidget {
                     bar: root.bar
                     imageUrl: modelData.image_url || ""
                     title: modelData.name || "?"
-                    subtitle: (modelData.owner ? modelData.owner + " · " : "") + (modelData.track_count !== undefined ? modelData.track_count + " tracks" : "playlist")
+                    subtitle: modelData.owner || ""
                     type: MaApi.mediaTypeLabel(modelData.media_type || "playlist")
                     source: MaApi.providerLabel(MaApi.providerDomain(modelData))
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
@@ -793,6 +799,7 @@ BarWidget {
                     required property var modelData
                     required property int index
                     bar: root.bar
+                    imageUrl: modelData.image_url || ""
                     title: modelData.name || "?"
                     subtitle: ""
                     type: MaApi.mediaTypeLabel(modelData.media_type || "artist")
@@ -805,6 +812,34 @@ BarWidget {
                   model: (root.service && root.service.searchResults && (root.searchFilter === "all" || root.searchFilter === "artist")) ? root.service.searchResults.artists : []
                   delegate: artistRowDelegate
                 }
+
+                Component {
+                  id: mediaRowDelegate
+                  SearchResultRow {
+                    required property var modelData
+                    required property int index
+                    bar: root.bar
+                    imageUrl: modelData.image_url || ""
+                    title: modelData.name || "?"
+                    subtitle: (modelData.artist || "") + (modelData.total_episodes ? " · " + modelData.total_episodes + " episodes" : "")
+                    type: MaApi.mediaTypeLabel(modelData.media_type || "")
+                    source: MaApi.providerLabel(MaApi.providerDomain(modelData))
+                    onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
+                  }
+                }
+
+                Repeater {
+                  model: (root.service && root.service.searchResults && (root.searchFilter === "all" || root.searchFilter === "radio")) ? root.service.searchResults.radio : []
+                  delegate: mediaRowDelegate
+                }
+                Repeater {
+                  model: (root.service && root.service.searchResults && (root.searchFilter === "all" || root.searchFilter === "podcast")) ? root.service.searchResults.podcasts : []
+                  delegate: mediaRowDelegate
+                }
+                Repeater {
+                  model: (root.service && root.service.searchResults && (root.searchFilter === "all" || root.searchFilter === "audiobook")) ? root.service.searchResults.audiobooks : []
+                  delegate: mediaRowDelegate
+                }
   
                 Text {
                   width: parent.width
@@ -812,7 +847,8 @@ BarWidget {
                     if (!root.service) return ""
                     var r = root.service.searchResults
                     if (!r) return root.service.searchQuery ? "Searching…" : "Type a query and press Enter."
-                    var total = (r.tracks ? r.tracks.length : 0) + (r.albums ? r.albums.length : 0) + (r.artists ? r.artists.length : 0) + (r.playlists ? r.playlists.length : 0)
+                    var total = 0
+                    for (var k in r) if (Array.isArray(r[k])) total += r[k].length
                     return total === 0 ? "No results." : ""
                   }
                   color: Qt.darker(root.bar.foreground, 1.4)
@@ -879,12 +915,13 @@ BarWidget {
                     bar: root.bar
                     imageUrl: modelData.image_url || ""
                     title: modelData.name || modelData.title || "?"
-                    subtitle: (modelData.artist || "") + (modelData.duration ? " · " + Math.floor(modelData.duration / 60) + " min" : "")
+                    subtitle: (modelData.artist || "") + (modelData.album ? " — " + modelData.album : "") + (modelData.duration ? " · " + Math.floor(modelData.duration / 60) + " min" : "")
                     showTypeBadge: false
                     source: MaApi.providerLabel(MaApi.providerDomain(modelData))
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
+                    // Right-click removes the favorite.
                     onContextMenu: function(mouse) {
-                      if (root.service) root.service.removeFavorite(modelData.uri)
+                      if (root.service) root.service.removeFavorite(modelData)
                     }
                   }
                 }
@@ -917,9 +954,9 @@ BarWidget {
                     required property var modelData
                     required property int index
                     bar: root.bar
-                    imageUrl: modelData.image_url || (modelData.metadata && modelData.metadata.image_url) || ""
+                    imageUrl: modelData.image_url || ""
                     title: modelData.name || "?"
-                    subtitle: (modelData.owner ? modelData.owner + " · " : "") + (modelData.track_count !== undefined ? modelData.track_count + " tracks" : "playlist")
+                    subtitle: modelData.owner || MaApi.providerLabel(MaApi.providerDomain(modelData))
                     showTypeBadge: false
                     showSourceBadge: true
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
@@ -956,7 +993,7 @@ BarWidget {
                     bar: root.bar
                     imageUrl: modelData.image_url || ""
                     title: modelData.name || modelData.title || "?"
-                    subtitle: MaApi.formatRelativeTime(modelData.last_played || modelData.timestamp)
+                    subtitle: (modelData.artist ? modelData.artist + " · " : "") + MaApi.formatRelativeTime(modelData.last_played)
                     showTypeBadge: true
                     showSourceBadge: true
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)

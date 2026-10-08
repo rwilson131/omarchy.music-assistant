@@ -27,7 +27,7 @@ Item {
   signal playPause()
   signal next()
   signal previous()
-  signal seek(real positionMs)
+  signal seek(real positionSeconds)
   signal toggleShuffle()
   signal cycleRepeat()
   signal favoriteCurrent()
@@ -38,12 +38,15 @@ Item {
   implicitWidth: Style.space(360)
   implicitHeight: column.implicitHeight
 
-  function formatTime(ms) {
-    if (!ms || ms < 0) return "0:00"
-    var s = Math.floor(ms / 1000)
-    var m = Math.floor(s / 60)
+  // Seconds in, m:ss (or h:mm:ss) out.
+  function formatTime(seconds) {
+    if (!seconds || seconds < 0) return "0:00"
+    var s = Math.floor(seconds)
+    var h = Math.floor(s / 3600)
+    var m = Math.floor((s % 3600) / 60)
     var sec = s % 60
-    return m + ":" + (sec < 10 ? "0" : "") + sec
+    var mm = h > 0 && m < 10 ? "0" + m : String(m)
+    return (h > 0 ? h + ":" : "") + mm + ":" + (sec < 10 ? "0" : "") + sec
   }
 
   Column {
@@ -200,17 +203,21 @@ Item {
         onMoved: function(value) { root.seek(value) }
       }
 
-      Row {
+      Item {
         width: parent.width
+        height: elapsedText.implicitHeight
         Text {
+          id: elapsedText
+          anchors.left: parent.left
           text: formatTime(root.elapsed)
           color: Qt.darker(root.bar.foreground, 1.3)
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.caption
         }
-        Item { width: 1; height: 1 }
         Text {
-          text: formatTime(root.duration)
+          anchors.right: parent.right
+          // A live stream has no duration; show "live" instead of 0:00.
+          text: root.duration > 0 ? formatTime(root.duration) : (root.isPlaying ? "live" : "")
           color: Qt.darker(root.bar.foreground, 1.3)
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.caption

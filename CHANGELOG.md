@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tab icons use current Nerd Font Material Design codepoints (music, speaker, playlist-play, magnify, heart, playlist-music, history). The old codepoints rendered as Facebook, a flask, fast-forward, "123" and two calendars.
 
 ### Fixed
+- Data layer brought in line with the Music Assistant 2.10 API. Rows in Favorites, Lists, Recent, Search and Queue now show artist, album and artwork (items carry `artists[]`, `album{}` and `image{path}` / `metadata.images`, not flat strings; provider-relative artwork goes through the server's image proxy). Playlists use `music/playlists/library_items` (`music/playlists/all` is not a command, so the Lists tab was always empty). Recent handles the bare-list response.
+- Queue state comes from `player_queues/get`: the current item is highlighted correctly (items responses never carried an index), shuffle/repeat reflect the queue, and crossfade/autoplay state is read.
+- Progress bar and times are in seconds (the API's unit); they showed 0:00 before. Elapsed time ticks locally between polls, live streams show "live" instead of 0:00, and seek sends `position` in seconds (the old `position_ms` was unknown to the server).
+- Removing a favorite sends `media_type` + `library_item_id` as the API requires; deleting a queue item sends `item_id_or_index`; favoriting the current track uses `players/add_currently_playing_to_favorites` so the live track behind a radio stream is favorited, and the heart reflects the current item's favorite flag.
+- Search covers radio, podcasts and audiobooks too, with filter chips for each; "Save queue as playlist" uses the native `player_queues/save_as_playlist`.
 - The globe button on the Now tab now opens the Music Assistant web UI in the default browser (`omarchy-launch-browser`); it previously called the shell's plugin summon with "browser", which is not a plugin, and did nothing.
 - The favorite button's off state drew a battery-with-bluetooth glyph (stale codepoint); it is now a heart outline.
 - Typing in the Search field (and the popup's Tab / Ctrl+1–7 / Space shortcuts) now works. The popup was a `PopupCard`, an xdg-popup of the bar window, which never takes keyboard focus; it is now a `KeyboardPanel`, the shell's layer-shell popup that primes keyboard focus when it opens.

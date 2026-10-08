@@ -228,9 +228,100 @@ function mediaTypeLabel(t) {
     album: "Album",
     playlist: "Playlist",
     artist: "Artist",
-    radio: "Radio"
+    radio: "Radio",
+    podcast: "Podcast",
+    podcast_episode: "Episode",
+    audiobook: "Audiobook",
+    folder: "Folder",
+    genre: "Genre"
   }
   return map[t] || t
+}
+
+// ---------------------------------------------------------------------------
+// Media item helpers for the Music Assistant 2.10 wire format. Items carry
+// `artists` (list of objects), `album` (object), `image` (object with a
+// `path` that may be provider-relative) and `metadata.images`; the old code
+// read flat `artist`, `album` and `image_url` strings that are not there, so
+// favorites, playlists, search and queue rows showed no artist or artwork.
+
+function itemArtist(it) {
+  if (!it) return ""
+  if (Array.isArray(it.artists) && it.artists.length > 0)
+    return it.artists.map(function(a) { return a && a.name ? String(a.name) : "" }).filter(function(x) { return x }).join(", ")
+  if (typeof it.artist === "string") return it.artist
+  if (Array.isArray(it.authors) && it.authors.length > 0) return it.authors.join(", ")
+  if (it.publisher) return String(it.publisher)
+  if (it.owner) return String(it.owner)
+  return ""
+}
+
+function itemAlbum(it) {
+  if (!it) return ""
+  if (it.album && typeof it.album === "object") return it.album.name ? String(it.album.name) : ""
+  if (typeof it.album === "string") return it.album
+  return ""
+}
+
+function itemImage(it) {
+  if (!it) return null
+  if (it.image && typeof it.image === "object" && it.image.path) return it.image
+  if (it.metadata && Array.isArray(it.metadata.images) && it.metadata.images.length > 0) {
+    for (var i = 0; i < it.metadata.images.length; i++) {
+      var im = it.metadata.images[i]
+      if (im && im.type === "thumb" && im.path) return im
+    }
+    if (it.metadata.images[0] && it.metadata.images[0].path) return it.metadata.images[0]
+  }
+  if (it.media_item) return itemImage(it.media_item)
+  if (typeof it.image_url === "string" && it.image_url) return { path: it.image_url, provider: "url", remotely_accessible: true }
+  return null
+}
+
+// Absolute http(s) image URL for an item, or "". A provider-relative path
+// (local files, some streaming providers) goes through the server's image
+// proxy, which is how the Music Assistant web UI loads them too.
+function itemImageUrl(it, serverUrl) {
+  var im = itemImage(it)
+  if (!im || !im.path) return ""
+  var path = String(im.path)
+  if (/^https?:\/\//i.test(path)) return safeImageUrl(path, 2048)
+  if (!serverUrl) return ""
+  return safeImageUrl(serverUrl + "/imageproxy?path=" + encodeURIComponent(path)
+    + "&provider=" + encodeURIComponent(im.provider || "") + "&size=128", 2048)
+}
+
+// One bounded, flat record for every list in the popup (search, favorites,
+// playlists, recent, browse, queue). Keeps only what the rows render plus
+// what actions need (uri, item_id, provider, media_type, path).
+function mapMediaItem(it, serverUrl) {
+  if (!it || typeof it !== "object") return null
+  var pm = Array.isArray(it.provider_mappings) ? boundedArray(it.provider_mappings, 8).map(function(m) {
+    return {
+      provider_domain: boundedString(m && m.provider_domain, 100),
+      provider_instance: boundedString(m && m.provider_instance, 100)
+    }
+  }) : []
+  return {
+    uri: boundedString(it.uri || it.media_item_uri, 2048),
+    item_id: boundedString(it.item_id, 200),
+    provider: boundedString(it.provider, 100),
+    name: boundedString(it.name || it.title, 500),
+    title: boundedString(it.name || it.title, 500),
+    artist: boundedString(itemArtist(it), 500),
+    album: boundedString(itemAlbum(it), 500),
+    image_url: itemImageUrl(it, serverUrl),
+    duration: typeof it.duration === "number" && it.duration >= 0 ? it.duration : 0,
+    track_number: typeof it.track_number === "number" ? it.track_number : null,
+    media_type: boundedString(it.media_type, 50),
+    favorite: it.favorite === true,
+    is_playable: it.is_playable !== false,
+    path: boundedString(it.path, 1024),
+    owner: boundedString(it.owner, 200),
+    year: typeof it.year === "number" ? it.year : null,
+    total_episodes: typeof it.total_episodes === "number" ? it.total_episodes : null,
+    provider_mappings: pm
+  }
 }
 
 function repeatModeIcon(mode) {

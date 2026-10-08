@@ -26,6 +26,21 @@ Item {
   property var queue: []
   property int queuePosition: 0
   property int queueRevision: 0
+  // From player_queues/get for the active player. The queue, not the player,
+  // owns shuffle/repeat/crossfade/autoplay and the current index; items
+  // responses never carried current_item_index, so the queue tab always
+  // highlighted row 0 before.
+  property var queueInfo: null
+  property bool crossfadeEnabled: false
+  property bool autoplayEnabled: false
+  property bool dontStopTheMusicEnabled: false
+  property string queueState: "idle"
+  property real queueElapsedBase: 0
+  property real queueElapsedAtMs: 0
+  property bool currentFavorite: false
+  // Bumped once a second while something plays so elapsed-time bindings
+  // re-evaluate between the two-second polls.
+  property int nowTick: 0
   property var searchResults: null
   property string searchQuery: ""
   property string lastError: ""
@@ -98,8 +113,29 @@ Item {
   readonly property string activeArtist: MaApi.trackArtist(activeMedia)
   readonly property string activeAlbum: MaApi.trackAlbum(activeMedia)
   readonly property string activeImageUrl: MaApi.trackImageUrl(activeMedia)
-  readonly property int activeDuration: activeMedia && activeMedia.duration ? activeMedia.duration : 0
-  readonly property int activeElapsed: activeMedia && activeMedia.elapsed_time ? activeMedia.elapsed_time : 0
+  // Seconds. PlayerMedia.duration / elapsed_time and PlayerQueue.elapsed_time
+  // are all seconds in the 2.10 API; the old code fed them to a formatter
+  // that expected milliseconds and showed 0:00 forever.
+  readonly property int activeDuration: {
+    if (activeMedia && typeof activeMedia.duration === "number" && activeMedia.duration > 0) return Math.round(activeMedia.duration)
+    if (queueInfo && queueInfo.current_item && typeof queueInfo.current_item.duration === "number") return Math.round(queueInfo.current_item.duration)
+    return 0
+  }
+  readonly property int activeElapsed: {
+    var _t = nowTick
+    if (!queueInfo) return activeMedia && activeMedia.elapsed_time ? Math.round(activeMedia.elapsed_time) : 0
+    var e = queueElapsedBase
+    if (queueState === "playing" && queueElapsedAtMs > 0) e += (Date.now() - queueElapsedAtMs) / 1000
+    if (activeDuration > 0) e = Math.min(e, activeDuration)
+    return Math.max(0, Math.round(e))
+  }
+
+  Timer {
+    interval: 1000
+    repeat: true
+    running: root.ready && root.queueState === "playing"
+    onTriggered: root.nowTick = root.nowTick + 1
+  }
 
   // ---------------------------------------------------------------- config loader
 
@@ -329,6 +365,13 @@ Item {
     root.runMaRequest(playersProc, payload)
   }
 
+  function runFetchQueueInfo(playerId) {
+    if (!root.ready || !playerId) { root.pollInFlight = false; return }
+    var payload = MaApi.buildArgs(root.config.url, root.config.token,
+      "player_queues/get", { queue_id: playerId }, "poll-queue-info")
+    root.runMaRequest(queueInfoProc, payload)
+  }
+
   function runFetchQueue(playerId) {
     if (!root.ready || !playerId) { root.pollInFlight = false; return }
     var payload = MaApi.buildArgs(root.config.url, root.config.token,
@@ -336,6 +379,70 @@ Item {
       { queue_id: playerId, limit: 200, offset: 0 },
       "poll-queue")
     root.runMaRequest(queueProc, payload)
+  }
+
+  Process {
+    id: queueInfoProc
+    property string authToken: ""
+    stdinEnabled: true
+    onStarted: {
+      if (authToken.length > 0) {
+        write(authToken + "\n")
+        authToken = ""
+      }
+    }
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try {
+          var payload = JSON.parse(String(queueInfoProc.stdout.text || "{}"))
+          root.applyQueueInfo(payload && payload.result !== undefined ? payload.result : payload)
+        } catch (e) {
+          root.lastError = "queue info parse: " + e.message
+        }
+        root.runFetchQueue(root.activePlayerId)
+      }
+    }
+  }
+
+  function applyQueueInfo(q) {
+    if (!q || typeof q !== "object" || !q.queue_id) {
+      root.queueInfo = null
+      return
+    }
+    var cur = q.current_item && typeof q.current_item === "object" ? q.current_item : null
+    root.queueInfo = {
+      queue_id: MaApi.boundedString(q.queue_id, 100),
+      items: typeof q.items === "number" ? q.items : 0,
+      current_index: typeof q.current_index === "number" ? q.current_index : 0,
+      state: MaApi.boundedString(q.state, 20),
+      current_item: cur ? {
+        queue_item_id: MaApi.boundedString(cur.queue_item_id, 100),
+        name: MaApi.boundedString(cur.name, 500),
+        duration: typeof cur.duration === "number" ? cur.duration : 0,
+        uri: MaApi.boundedString(cur.media_item ? cur.media_item.uri : "", 2048),
+        media_type: MaApi.boundedString(cur.media_item ? cur.media_item.media_type : "", 50),
+        favorite: !!(cur.media_item && cur.media_item.favorite === true)
+      } : null,
+      next_name: q.next_item && q.next_item.name ? MaApi.boundedString(q.next_item.name, 500) : ""
+    }
+    root.queuePosition = root.queueInfo.current_index
+    root.queueState = root.queueInfo.state || "idle"
+    root.shuffleEnabled = q.shuffle_enabled === true
+    root.repeatMode = MaApi.boundedString(q.repeat_mode || "off", 20)
+    root.crossfadeEnabled = q.crossfade_enabled === true
+    root.autoplayEnabled = q.autoplay_enabled === true
+    root.dontStopTheMusicEnabled = q.dont_stop_the_music_enabled === true
+    root.currentFavorite = root.queueInfo.current_item ? root.queueInfo.current_item.favorite : false
+    // elapsed_time is as of elapsed_time_last_updated (server epoch seconds).
+    // Project it to now, assuming the clocks agree, and tick locally from here.
+    var base = typeof q.elapsed_time === "number" ? q.elapsed_time : 0
+    if (root.queueState === "playing" && typeof q.elapsed_time_last_updated === "number") {
+      var drift = Date.now() / 1000 - q.elapsed_time_last_updated
+      if (drift > 0 && drift < 3600) base += drift
+    }
+    root.queueElapsedBase = base
+    root.queueElapsedAtMs = Date.now()
   }
 
   Process {
@@ -363,7 +470,7 @@ Item {
         if (chosen && chosen !== root.activePlayerId) {
           root.activePlayerId = chosen
         }
-        root.runFetchQueue(root.activePlayerId)
+        root.runFetchQueueInfo(root.activePlayerId)
       }
     }
     onExited: {
@@ -416,9 +523,21 @@ Item {
         shuffle_enabled: !!p.shuffle_enabled,
         repeat_mode: MaApi.boundedString(p.repeat_mode, 20),
         current_media: p.current_media || null,
-        group_members: Array.isArray(p.group_members) ? MaApi.boundedArray(p.group_members, 16).map(function(g) { return MaApi.boundedString(g, 100) }) : [],
+        group_members: Array.isArray(p.group_members) ? MaApi.boundedArray(p.group_members, 32).map(function(g) { return MaApi.boundedString(g, 100) }) : [],
+        can_group_with: Array.isArray(p.can_group_with) ? MaApi.boundedArray(p.can_group_with, 64).map(function(g) { return MaApi.boundedString(g, 100) }) : [],
         hide_in_ui: !!p.hide_in_ui,
-        synced_to: MaApi.boundedString(p.synced_to, 100)
+        synced_to: MaApi.boundedString(p.synced_to, 100),
+        active_group: MaApi.boundedString(p.active_group, 100),
+        active_source: MaApi.boundedString(p.active_source, 200),
+        type: MaApi.boundedString(p.type, 20),
+        provider: MaApi.boundedString(p.provider, 100),
+        group_volume: typeof p.group_volume === "number" ? Math.max(0, Math.min(100, p.group_volume)) : null,
+        sleep_timer_expires_at: typeof p.sleep_timer_expires_at === "number" ? p.sleep_timer_expires_at : 0,
+        power_control: MaApi.boundedString(p.power_control, 50),
+        supported_features: Array.isArray(p.supported_features) ? MaApi.boundedArray(p.supported_features, 32).map(function(f) { return MaApi.boundedString(f, 50) }) : [],
+        source_list: Array.isArray(p.source_list) ? MaApi.boundedArray(p.source_list, 16).map(function(src) {
+          return { id: MaApi.boundedString(src && src.id, 100), name: MaApi.boundedString(src && src.name, 100), passive: !!(src && src.passive) }
+        }) : []
       }
     })
     root.players = bounded
@@ -436,24 +555,26 @@ Item {
       return
     }
     var raw = Array.isArray(payload) ? payload : (payload.items || [])
+    // QueueItem: name, duration, index, queue_item_id, image {path}, and the
+    // full media_item underneath (uri, artists, album, favorite).
     var items = MaApi.boundedArray(raw, MaApi.MAX_QUEUE_ITEMS).map(function(it) {
+      var mi = it.media_item && typeof it.media_item === "object" ? it.media_item : {}
       return {
         queue_item_id: MaApi.boundedString(it.queue_item_id || it.item_id, 100),
-        uri: MaApi.boundedString(it.uri || it.media_item_uri, 2048),
-        name: MaApi.boundedString(it.name || it.title, 500),
-        artist: MaApi.boundedString(it.artist, 500),
-        album: MaApi.boundedString(it.album, 500),
-        image_url: MaApi.safeImageUrl(it.image_url || it.image, 2048),
+        index: typeof it.index === "number" ? it.index : null,
+        uri: MaApi.boundedString(mi.uri || it.uri || it.media_item_uri, 2048),
+        name: MaApi.boundedString(it.name || mi.name || it.title, 500),
+        artist: MaApi.boundedString(MaApi.itemArtist(mi) || it.artist, 500),
+        album: MaApi.boundedString(MaApi.itemAlbum(mi) || it.album, 500),
+        image_url: MaApi.itemImageUrl(it, root.config.url),
         duration: typeof it.duration === "number" && it.duration >= 0 ? it.duration : 0,
-        track_number: typeof it.track_number === "number" ? it.track_number : null,
-        media_type: MaApi.boundedString(it.media_type, 50)
+        track_number: typeof mi.track_number === "number" ? mi.track_number : null,
+        media_type: MaApi.boundedString(mi.media_type || it.media_type, 50),
+        favorite: mi.favorite === true,
+        available: it.available !== false
       }
     })
-    var pos = (payload && payload.current_item_index !== undefined) ? payload.current_item_index
-      : (payload && payload.current_index !== undefined) ? payload.current_index
-      : 0
     root.queue = items
-    root.queuePosition = pos || 0
     root.queueRevision = root.queueRevision + 1
   }
 
@@ -468,10 +589,8 @@ Item {
   }
 
   function updatePlayModeFromPlayer() {
-    var p = root.activePlayer
-    if (!p) return
-    if (p.shuffle_enabled !== undefined) root.shuffleEnabled = !!p.shuffle_enabled
-    if (p.repeat_mode !== undefined) root.repeatMode = String(p.repeat_mode)
+    // Shuffle and repeat live on the queue (see applyQueueInfo); nothing to
+    // read from the player in 2.10.
   }
 
   // ------------------------------------------------------------- helpers
@@ -738,7 +857,8 @@ Item {
   }
 
   function deleteQueueItem(playerId, itemId) {
-    root.actionForPlayer(playerId, "player_queues/delete_item", { queue_item_id: itemId })
+    // The API parameter is item_id_or_index; queue_item_id was rejected.
+    root.actionForPlayer(playerId, "player_queues/delete_item", { item_id_or_index: itemId })
     root.refreshState()
   }
 
@@ -753,7 +873,7 @@ Item {
     var lim = limit || 20
     var payload = MaApi.buildArgs(root.config.url, root.config.token,
       "music/search",
-      { search_query: query, limit: lim, media_types: ["track", "album", "artist", "playlist"] },
+      { search_query: query, limit: lim, media_types: ["track", "album", "artist", "playlist", "radio", "podcast", "audiobook"] },
       // Uncached searches across every provider take 8-11 s on a Home
       // Assistant host; the default 10 s cap returned them as empty.
       "search-" + Date.now(), "30")
@@ -766,33 +886,23 @@ Item {
   }
 
   function _boundMediaItem(it) {
-    if (!it) return null
-    return {
-      uri: MaApi.boundedString(it.uri || it.media_item_uri, 2048),
-      name: MaApi.boundedString(it.name || it.title, 500),
-      title: MaApi.boundedString(it.title || it.name, 500),
-      artist: MaApi.boundedString(it.artist, 500),
-      album: MaApi.boundedString(it.album, 500),
-      image_url: MaApi.safeImageUrl(it.image_url || it.image || it.imageUrl, 2048),
-      duration: typeof it.duration === "number" && it.duration >= 0 ? it.duration : 0,
-      track_number: typeof it.track_number === "number" ? it.track_number : null,
-      media_type: MaApi.boundedString(it.media_type, 50)
-    }
+    return MaApi.mapMediaItem(it, root.config.url)
+  }
+
+  function _boundList(list, max) {
+    return MaApi.boundedArray(Array.isArray(list) ? list : [], max).map(_boundMediaItem).filter(function(x) { return x !== null })
   }
 
   function _boundSearchResults(raw) {
     if (!raw || typeof raw !== "object") return null
     return {
-      tracks: MaApi.boundedArray(raw.tracks || [], MaApi.MAX_SEARCH_TRACKS).map(_boundMediaItem),
-      albums: MaApi.boundedArray(raw.albums || [], MaApi.MAX_SEARCH_ALBUMS).map(_boundMediaItem),
-      artists: MaApi.boundedArray(raw.artists || [], MaApi.MAX_SEARCH_ARTISTS).map(function(a) {
-        return {
-          uri: MaApi.boundedString(a.uri, 2048),
-          name: MaApi.boundedString(a.name, 500),
-          image_url: MaApi.safeImageUrl(a.image_url || a.image, 2048)
-        }
-      }),
-      playlists: MaApi.boundedArray(raw.playlists || [], MaApi.MAX_SEARCH_PLAYLISTS).map(_boundMediaItem)
+      tracks: _boundList(raw.tracks, MaApi.MAX_SEARCH_TRACKS),
+      albums: _boundList(raw.albums, MaApi.MAX_SEARCH_ALBUMS),
+      artists: _boundList(raw.artists, MaApi.MAX_SEARCH_ARTISTS),
+      playlists: _boundList(raw.playlists, MaApi.MAX_SEARCH_PLAYLISTS),
+      radio: _boundList(raw.radio, MaApi.MAX_SEARCH_TRACKS),
+      podcasts: _boundList(raw.podcasts, MaApi.MAX_SEARCH_ALBUMS),
+      audiobooks: _boundList(raw.audiobooks, MaApi.MAX_SEARCH_ALBUMS)
     }
   }
 
@@ -891,18 +1001,14 @@ Item {
       onStreamFinished: {
         try {
           var payload = JSON.parse(String(recentProc.stdout.text || "{}"))
-          var list = Array.isArray(payload.result) ? payload.result : []
+          // The server answers with a bare list, not {result: [...]}.
+          var list = Array.isArray(payload) ? payload : (Array.isArray(payload.result) ? payload.result : [])
           root.recentItems = MaApi.boundedArray(list, MaApi.MAX_RECENT_ITEMS).map(function(it) {
-            return {
-              uri: MaApi.boundedString(it.uri, 2048),
-              name: MaApi.boundedString(it.name || it.title, 500),
-              artist: MaApi.boundedString(it.artist, 500),
-              album: MaApi.boundedString(it.album, 500),
-              image_url: MaApi.safeImageUrl(it.image_url, 2048),
-              last_played: MaApi.boundedString(it.last_played, 50),
-              timestamp: typeof it.timestamp === "number" ? it.timestamp : null
-            }
-          })
+            var m = MaApi.mapMediaItem(it, root.config.url)
+            if (!m) return null
+            m.last_played = typeof it.last_played === "number" ? it.last_played : (typeof it.timestamp === "number" ? it.timestamp : null)
+            return m
+          }).filter(function(x) { return x !== null })
           root.recentRevision = root.recentRevision + 1
         } catch (e) {
           root.lastError = "recent parse: " + e.message
@@ -963,16 +1069,19 @@ Item {
 
   property int searchRevision: 0
 
-  function seek(playerId, positionMs) {
+  // Seconds. player_queues/seek takes `position` in seconds; the old
+  // position_ms argument was unknown to the server.
+  function seek(playerId, positionSeconds) {
     var pid = playerId || root.activePlayerId
     if (!pid) return
-    var p = Math.max(0, Math.round(positionMs))
-    root.actionForPlayer(pid, "player_queues/seek", { position_ms: p })
+    var p = Math.max(0, Math.round(positionSeconds))
+    root.actionForPlayer(pid, "player_queues/seek", { position: p })
+    root.queueElapsedBase = p
+    root.queueElapsedAtMs = Date.now()
   }
 
-  function seekRelative(deltaMs) {
-    var cur = root.activeMedia ? (root.activeMedia.elapsed_time || 0) : 0
-    root.seek(root.activePlayerId, cur + deltaMs)
+  function seekRelative(deltaSeconds) {
+    root.seek(root.activePlayerId, root.activeElapsed + deltaSeconds)
   }
 
   function toggleShuffle(playerId) {
@@ -1005,17 +1114,31 @@ Item {
     root.refreshFavorites()
   }
 
-  function removeFavorite(uri) {
-    if (!uri) return
-    root.actionForSourceTarget("music/favorites/remove_item", { item: uri })
-    root.refreshFavorites()
+  // Takes a mapped library item (media_type + item_id); the API wants
+  // media_type and library_item_id, not a uri.
+  function removeFavorite(item) {
+    if (!item || !item.media_type || !item.item_id) return
+    root.runAction("music/favorites/remove_item", { media_type: item.media_type, library_item_id: item.item_id }, function() {
+      root.refreshFavorites()
+    })
+  }
+
+  function removeFavoriteByUri(uri) {
+    var m = /^library:\/\/([a-z_]+)\/(\d+)$/.exec(String(uri || ""))
+    if (!m) return
+    root.removeFavorite({ media_type: m[1], item_id: m[2] })
   }
 
   function favoriteCurrent() {
-    var m = root.activeMedia
-    if (!m || !m.uri) return
-    root.addFavorite(m.uri)
-    root.showOsd("Favorited", "favorite", MaApi.trackTitle(m))
+    var pid = root.activePlayerId
+    if (!pid || !root.hasMedia) return
+    // Lets the server resolve the item, including the live track behind a
+    // radio stream, instead of favoriting the station uri.
+    root.runAction("players/add_currently_playing_to_favorites", { player_id: pid }, function() {
+      root.refreshFavorites()
+    })
+    root.currentFavorite = true
+    root.showOsd("Favorited", "favorite", root.activeTitle)
   }
 
   function openWebUI() {
@@ -1051,7 +1174,8 @@ Item {
   function refreshPlaylists() {
     if (!root.ready) return
     var payload = MaApi.buildArgs(root.config.url, root.config.token,
-      "music/playlists/all", { limit: 100 }, "playlists")
+      // music/playlists/all is not a command in 2.10; library_items is.
+      "music/playlists/library_items", { limit: 100 }, "playlists")
     root.runMaRequest(playlistsProc, payload)
   }
 
@@ -1064,12 +1188,12 @@ Item {
 
   function saveQueueAsPlaylist(name) {
     if (!name || !root.queue || root.queue.length === 0) return
-    var payload = MaApi.buildArgs(root.config.url, root.config.token,
-      "music/playlists/create_playlist", { name: name }, "save-q-create")
-    root.saveQueuePhase = "create"
-    saveQueueProc.phase = "create"
-    saveQueueProc.name = name
-    root.runMaRequest(saveQueueProc, payload)
+    // 2.10 has a native command for this; the old create-then-add dance sent
+    // the wrong playlist id field and never populated the playlist.
+    root.runAction("player_queues/save_as_playlist", { queue_id: root.activePlayerId, name: String(name) }, function() {
+      root.refreshPlaylists()
+    })
+    root.showOsd("Saved", "playlist", "Queue saved as \"" + name + "\"")
   }
 
   // ---------------------------------------------------------------- IPC
@@ -1099,7 +1223,12 @@ Item {
         elapsed: root.activeElapsed,
         duration: root.activeDuration,
         pollingState: root.pollingActive ? "active" : "stopped",
-        pollingActive: root.pollingActive
+        pollingActive: root.pollingActive,
+        queueState: root.queueState,
+        queueIndex: root.queuePosition,
+        crossfade: root.crossfadeEnabled,
+        autoplay: root.autoplayEnabled,
+        currentFavorite: root.currentFavorite
       })
     }
 
@@ -1196,13 +1325,13 @@ Item {
       return JSON.stringify(list)
     }
 
-    function seek(positionMs: real): string {
-      root.seek(root.activePlayerId, positionMs)
+    function seek(positionSeconds: real): string {
+      root.seek(root.activePlayerId, positionSeconds)
       return "ok"
     }
 
-    function seekRelative(deltaMs: real): string {
-      root.seekRelative(deltaMs)
+    function seekRelative(deltaSeconds: real): string {
+      root.seekRelative(deltaSeconds)
       return "ok"
     }
 
@@ -1232,7 +1361,7 @@ Item {
     }
 
     function favoriteRemove(uri: string): string {
-      root.removeFavorite(uri)
+      root.removeFavoriteByUri(uri)
       return "ok"
     }
 
@@ -1259,6 +1388,23 @@ Item {
     function refreshRecent(): string {
       root.refreshRecent()
       return "ok"
+    }
+
+    // Counts plus the first row of every list, for scripts and debugging.
+    function listsSnapshot(): string {
+      function head(a) { return Array.isArray(a) && a.length > 0 ? a[0] : null }
+      var fav = {}
+      for (var k in root.favorites) fav[k] = { count: (root.favorites[k] || []).length, first: head(root.favorites[k]) }
+      var sr = {}
+      if (root.searchResults) for (var sk in root.searchResults) sr[sk] = { count: (root.searchResults[sk] || []).length, first: head(root.searchResults[sk]) }
+      return JSON.stringify({
+        queue: { count: root.queue.length, position: root.queuePosition, first: head(root.queue) },
+        queueInfo: root.queueInfo,
+        favorites: fav,
+        playlists: { count: root.playlists.length, first: head(root.playlists) },
+        recent: { count: root.recentItems.length, first: head(root.recentItems) },
+        search: { query: root.searchQuery, results: sr }
+      })
     }
   }
 }

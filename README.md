@@ -145,11 +145,12 @@ end
 ## API commands used
 
 - `players/all` — list of players with current state
-- `player_queues/items` — queue listing for the active player
-- `players/cmd/volume_set`, `players/cmd/volume_mute`
-- `player_queues/play`, `pause`, `play_pause`, `next`, `previous`,
-  `play_index`, `delete_item`, `clear`, `transfer`, `play_media`
-- `music/search`
+- `player_queues/get`, `player_queues/items` — queue state and listing for the active player
+- `players/cmd/volume_set`, `players/cmd/volume_mute`, `players/cmd/power`
+- `player_queues/play`, `pause`, `next`, `previous`, `seek`, `shuffle`, `repeat`,
+  `play_index`, `delete_item`, `clear`, `transfer`, `play_media`, `save_as_playlist`
+- `music/search`, `music/<type>/library_items` (favorites, playlists), `music/recently_played_items`
+- `music/favorites/add_item`, `music/favorites/remove_item`, `players/add_currently_playing_to_favorites`
 
 See https://music-assistant.io/api/ for full API docs.
 
