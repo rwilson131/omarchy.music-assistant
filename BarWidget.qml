@@ -16,6 +16,7 @@ BarWidget {
   readonly property var service: bar && bar.shell ? bar.shell.firstPartyServiceFor("io.github.rwilson131.music-assistant") : null
   readonly property bool serviceReady: service && service.ready
   readonly property bool serviceConnected: service && service.connected
+  readonly property bool sourceBadgesEnabled: !service || !service.config || service.config.showSourceBadge !== false
 
   readonly property var activePlayer: service && service.activePlayer ? service.activePlayer : null
   readonly property var media: service && service.activeMedia ? service.activeMedia : null
@@ -1043,6 +1044,7 @@ BarWidget {
                     title: modelData.name || "?"
                     subtitle: MaApi.itemSubtitle(modelData)
                     type: MaApi.mediaTypeLabel(modelData.media_type)
+                    showSourceBadge: root.sourceBadgesEnabled
                     source: MaApi.providerLabel(MaApi.providerDomain(modelData))
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
                     onContextMenu: function(mouse) { if (root.service) root.service.enqueue(modelData.uri, "next", modelData.name) }
@@ -1138,6 +1140,7 @@ BarWidget {
                     title: (folder ? "󰉋  " : "") + (modelData.name || "?")
                     subtitle: folder ? "" : MaApi.itemSubtitle(modelData)
                     showTypeBadge: !folder
+                    showSourceBadge: root.sourceBadgesEnabled
                     type: MaApi.mediaTypeLabel(modelData.media_type || "")
                     source: folder ? "" : MaApi.providerLabel(MaApi.providerDomain(modelData))
                     onClicked: {
@@ -1210,6 +1213,7 @@ BarWidget {
                     title: modelData.name || "?"
                     subtitle: MaApi.itemSubtitle(modelData) + (modelData.duration ? " · " + Math.floor(modelData.duration / 60) + " min" : "")
                     showTypeBadge: false
+                    showSourceBadge: root.sourceBadgesEnabled
                     source: MaApi.providerLabel(MaApi.providerDomain(modelData))
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
                     // Right-click removes the favorite; middle-click adds it to the queue.
@@ -1254,7 +1258,7 @@ BarWidget {
                     title: modelData.name || "?"
                     subtitle: modelData.owner || MaApi.providerLabel(MaApi.providerDomain(modelData))
                     showTypeBadge: false
-                    showSourceBadge: true
+                    showSourceBadge: root.sourceBadgesEnabled
                     source: MaApi.providerLabel(MaApi.providerDomain(modelData))
                     // Click opens the tracks; right-click adds the playing track
                     // to a library playlist; middle-click queues the playlist.
@@ -1334,6 +1338,7 @@ BarWidget {
                     title: (modelData.track_number ? modelData.track_number + ". " : "") + (modelData.name || "?")
                     subtitle: MaApi.itemSubtitle(modelData)
                     showTypeBadge: false
+                    showSourceBadge: root.sourceBadgesEnabled
                     source: MaApi.providerLabel(MaApi.providerDomain(modelData))
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
                     onContextMenu: function(mouse) { if (root.service) root.service.enqueue(modelData.uri, "next", modelData.name) }
@@ -1368,7 +1373,8 @@ BarWidget {
                     title: modelData.name || "?"
                     subtitle: (modelData.artist ? modelData.artist + " · " : "") + MaApi.formatRelativeTime(modelData.last_played)
                     showTypeBadge: true
-                    showSourceBadge: true
+                    showSourceBadge: root.sourceBadgesEnabled
+                    source: MaApi.providerLabel(MaApi.providerDomain(modelData))
                     onClicked: if (root.service) root.service.playUri(root.service.activePlayerId, modelData.uri)
                     onContextMenu: function(mouse) { if (root.service) root.service.enqueue(modelData.uri, "next", modelData.name) }
                     onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)

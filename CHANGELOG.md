@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A failed `players/all` poll now marks the service disconnected and stops that poll chain instead of retaining a stale connected/playing state. Contextual volume keys consequently fall back to local audio during a Music Assistant outage and recover on the next successful poll.
 - Rapid `Play next` and `Add to queue` actions are preserved in order instead of being coalesced as though they were repeated play-now selections. A new play-now (`replace`) selection still supersedes older pending media picks to protect slow players from request storms.
 - Search, Browse, and collection requests now retain the latest request made while a prior request is in flight. Generation checks prevent older replies from appearing under a newer query, path, or playlist, and clearing Search or closing a collection invalidates pending results.
+- The documented `showSourceBadge` setting now controls provider badges consistently across Search, Browse, Favorites, Lists, collection drill-down, and Recent; Recent rows also receive their previously missing provider label.
 
 ## [1.1.5] - 2026-10-08
 
