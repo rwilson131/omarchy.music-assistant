@@ -145,7 +145,10 @@ Item {
     watchChanges: true
     printErrors: false
     onLoaded: root.applyConfig(text())
-    onFileChanged: root.applyConfig(text())
+    // text() still holds the previous content when fileChanged fires, so a
+    // save made by this plugin (persistConfig) was re-applied as the old
+    // state. Reload; onLoaded applies the fresh text.
+    onFileChanged: configFile.reload()
     onLoadFailed: function(err) {
       root.configError = "config.json missing or unreadable"
       root.config = ({})
@@ -214,13 +217,33 @@ Item {
     ].join("\n")
   }
 
+  // The two scripts edit the same file; run one at a time and replay the
+  // last request made while one was in flight.
+  property string mediaKeysPending: ""
+
   function installMediaKeysBindings() {
     if (!root.ready || !root.mediaKeysEnabled) return
-    mediaKeysInstaller.running = true
+    root.runMediaKeysScript("install")
   }
 
   function uninstallMediaKeysBindings() {
-    mediaKeysUninstaller.running = true
+    root.runMediaKeysScript("uninstall")
+  }
+
+  function runMediaKeysScript(which) {
+    if (mediaKeysInstaller.running || mediaKeysUninstaller.running) {
+      root.mediaKeysPending = which
+      return
+    }
+    if (which === "install") mediaKeysInstaller.running = true
+    else mediaKeysUninstaller.running = true
+  }
+
+  function mediaKeysScriptDone() {
+    var next = root.mediaKeysPending
+    root.mediaKeysPending = ""
+    if (next === "install" && root.mediaKeysEnabled) Qt.callLater(function() { root.runMediaKeysScript("install") })
+    else if (next === "uninstall" && !root.mediaKeysEnabled) Qt.callLater(function() { root.runMediaKeysScript("uninstall") })
   }
 
   function setMediaKeysEnabled(on) {
@@ -301,6 +324,7 @@ Item {
       } else {
         console.warn("[music-assistant] Failed to install media key bindings: exitCode=" + exitCode)
       }
+      root.mediaKeysScriptDone()
     }
   }
 
@@ -314,6 +338,7 @@ Item {
       } else if (exitCode !== 0) {
         console.warn("[music-assistant] Failed to remove media key bindings: exitCode=" + exitCode)
       }
+      root.mediaKeysScriptDone()
     }
   }
 
@@ -335,11 +360,18 @@ Item {
     id: configSaver
     property string savePath: ""
     property string saveJson: ""
+    // Setting running = true on a busy Process is a no-op, so a save
+    // requested while one is in flight is replayed when it finishes.
+    property bool pending: false
     onExited: function(exitCode) {
       if (exitCode === 0) {
         console.log("[music-assistant] Config persisted to " + savePath)
       } else {
         console.warn("[music-assistant] Failed to persist config (exit=" + exitCode + ")")
+      }
+      if (pending) {
+        pending = false
+        Qt.callLater(function() { root.persistConfig() })
       }
     }
   }
@@ -377,6 +409,7 @@ Item {
 
   function persistConfig() {
     if (!root.ready || !root.config) return
+    if (configSaver.running) { configSaver.pending = true; return }
     var path = root.configPath
     var json = JSON.stringify(root.config, null, 2)
     configSaver.savePath = path

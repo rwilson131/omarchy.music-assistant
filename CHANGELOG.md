@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - A `config.json` created after the plugin loaded is picked up within a few seconds; it used to need a shell restart (the file watcher never saw the file appear).
 - The media-key installer ran twice on every config load.
+- Settings the plugin saves itself (the media keys switch, the preferred player) no longer snap back: the config watcher re-applied its cached, pre-save text whenever the file changed. It now reloads the file. Saves made while one is still being written are queued instead of dropped, and the install/remove scripts run one at a time.
 
 ## [1.1.0] - 2026-10-07
 
