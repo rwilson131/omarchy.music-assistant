@@ -40,7 +40,7 @@ omarchy plugin add https://github.com/rwilson131/omarchy.music-assistant.git --e
 | `recentLimit` | `50` | Items in the Recent tab |
 | `showSourceBadge` | `true` | Provider badge on list rows |
 | `openWebUiPath` | `""` | URL the globe button opens; defaults to `url` |
-| `installMediaKeys` | `false` | Keyboard media keys (see below); the Players tab switch writes this |
+| `installMediaKeys` | `false` | Keyboard media keys (see below); the switch in the popup header writes this |
 | `mprisFallback` | `true` | Route play/pause/next to a playing MPRIS player (browser, Spotify) instead of Music Assistant |
 
 ## Bar widget
@@ -116,8 +116,8 @@ omarchy-shell io.github.rwilson131.music-assistant playPause
 
 ## Media keys
 
-Off by default. Turn it on from the popup: **Players tab → This computer →
-Media keys**, or with `omarchy-shell io.github.rwilson131.music-assistant mediaKeys on`.
+Off by default. Turn it on with the **Media keys** switch at the top right of
+the popup, or with `omarchy-shell io.github.rwilson131.music-assistant mediaKeys on`.
 
 On, the plugin appends a marked block to `~/.config/hypr/bindings.lua`
 (between `-- BEGIN music-assistant media-keys` and `-- END …`) and reloads

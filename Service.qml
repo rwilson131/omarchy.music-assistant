@@ -196,7 +196,7 @@ Item {
     return [
       "",
       mediaKeysMarkerBegin,
-      "-- Installed by the Music Assistant plugin (Players tab > Media keys).",
+      "-- Installed by the Music Assistant plugin (Media keys switch in the popup).",
       "hl.unbind(\"XF86AudioNext\")",
       "hl.unbind(\"XF86AudioPrev\")",
       "hl.unbind(\"XF86AudioPlay\")",

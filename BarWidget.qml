@@ -317,6 +317,34 @@ BarWidget {
             color: root.bar.foreground
           }
         }
+        // Media keys switch, top right like the shell's own panels. On
+        // installs a marked block in ~/.config/hypr/bindings.lua binding
+        // play/pause/next/previous to the plugin and the volume keys to the
+        // contextual script; Off removes it. See Service.mediaKeysBindingsBlock.
+        trailingControl: Component {
+          Row {
+            spacing: Style.space(6)
+            Text {
+              text: "Media keys"
+              color: Qt.darker(root.bar.foreground, 1.4)
+              font.family: root.bar.fontFamily
+              font.pixelSize: Style.font.caption
+              anchors.verticalCenter: parent.verticalCenter
+            }
+            ToggleSwitch {
+              id: keysSwitch
+              checked: root.service ? root.service.mediaKeysEnabled : false
+              interactive: root.serviceReady
+              foreground: root.bar.foreground
+              anchors.verticalCenter: parent.verticalCenter
+              onToggled: if (root.service) root.service.setMediaKeysEnabled(!root.service.mediaKeysEnabled)
+              PanelToolTip {
+                visible: keysSwitch.containsMouse
+                text: "Keyboard play/pause, next and previous control Music Assistant; volume keys only while it is playing"
+              }
+            }
+          }
+        }
       }
 
       PanelSeparator {
@@ -660,24 +688,6 @@ BarWidget {
                   color: Qt.darker(root.bar.foreground, 1.5)
                   font.family: root.bar.fontFamily
                   font.pixelSize: Style.font.caption
-                }
-
-                PanelSectionHeader {
-                  foreground: root.bar.foreground
-                  text: "THIS COMPUTER"
-                }
-
-                // Keyboard media keys. Writes or removes a marked block in
-                // ~/.config/hypr/bindings.lua; see Service.mediaKeysBindingsBlock.
-                Toggle {
-                  width: parent.width
-                  label: "Media keys"
-                  description: "Play/pause, next and previous control Music Assistant. Volume keys do while it is playing, otherwise they stay with Omarchy."
-                  checked: root.service ? root.service.mediaKeysEnabled : false
-                  enabled: root.serviceReady
-                  foreground: root.bar.foreground
-                  fontFamily: root.bar.fontFamily
-                  onClicked: if (root.service) root.service.setMediaKeysEnabled(!root.service.mediaKeysEnabled)
                 }
               }
   
