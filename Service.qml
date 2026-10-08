@@ -527,6 +527,8 @@ Item {
   function stopConnection() {
     pollTimer.stop()
     root.pollingActive = false
+    root.connected = false
+    root.pollInFlight = false
   }
 
   function refreshState() {
@@ -549,8 +551,13 @@ Item {
     id: playersRequest
     label: "players"
     onFinished: function(data) {
-      if (data === null) root.lastError = "players: bad reply"
-      else root.applyPlayers(data)
+      // players/all is the connection health check. Do not continue the poll
+      // with stale players after a timeout, invalid JSON or JSON-RPC error:
+      // connected=false also makes contextual media keys fall back locally.
+      if (!root.applyPlayers(data)) {
+        root.pollInFlight = false
+        return
+      }
       var chosen = MaApi.pickActivePlayerId(root.players, root.preferredPlayerId)
       if (chosen && chosen !== root.activePlayerId) root.activePlayerId = chosen
       // Step 2 of 3.
@@ -621,8 +628,9 @@ Item {
   // Player records keep only what the popup and the IPC surface read.
   function applyPlayers(list) {
     if (!Array.isArray(list)) {
-      root.lastError = "players/all returned non-list"
-      return
+      root.connected = false
+      root.lastError = list === null ? "players: no valid reply" : "players/all returned non-list"
+      return false
     }
     var bounded = MaApi.boundedArray(list, MaApi.MAX_PLAYERS).map(function(p) {
       return {
@@ -649,6 +657,7 @@ Item {
     root.revision = root.revision + 1
     root.connected = true
     root.lastError = ""
+    return true
   }
 
   function applyQueue(payload) {

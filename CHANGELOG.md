@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Media-key installation and removal now validate that the marked block is complete and unique before editing `bindings.lua`. Malformed markers fail closed instead of risking truncation. Successful changes use a same-directory temporary file, atomic rename, preserved permissions and a rollback backup.
+- A failed `players/all` poll now marks the service disconnected and stops that poll chain instead of retaining a stale connected/playing state. Contextual volume keys consequently fall back to local audio during a Music Assistant outage and recover on the next successful poll.
 
 ## [1.1.5] - 2026-10-08
 
