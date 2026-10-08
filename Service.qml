@@ -668,11 +668,13 @@ Item {
         root.pendingActions.push({ command: command, args: args, onDone: onDone })
       return
     }
-    var payload = MaApi.buildActionArgs(root.config.url, root.config.token, command, args)
+    var payload = MaApi.buildActionArgs(root.config.url, root.config.token, command, args, undefined,
+      MaApi.isPlayCommand(command) ? "25" : "8")
     actionProc.authToken = payload.token || ""
     actionProc.command = [Quickshell.env("SHELL") || "/bin/bash", "-c", payload.script]
     actionProc.onFinished = onDone || null
     actionProc.actionCommand = command
+    actionProc.actionArgs = args || null
     actionProc.running = true
   }
 
@@ -681,6 +683,7 @@ Item {
     property string authToken: ""
     property var onFinished: null
     property string actionCommand: ""
+    property var actionArgs: null
     stdinEnabled: true
     onStarted: {
       if (authToken.length > 0) {
@@ -692,8 +695,11 @@ Item {
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        actionProc.httpCode = String(text || "").trim()
-        root.reportActionStatus(actionProc.actionCommand, actionProc.httpCode)
+        // "<http_code> <seconds>" (see MaApi._buildCurlScript).
+        var parts = String(text || "").trim().split(/\s+/)
+        actionProc.httpCode = parts[0] || ""
+        var elapsed = parts.length > 1 ? parseFloat(parts[1]) : 0
+        root.reportActionStatus(actionProc.actionCommand, actionProc.httpCode, elapsed, actionProc.actionArgs)
       }
     }
     onExited: function(code, status) {
@@ -718,13 +724,114 @@ Item {
   // Actions print only the HTTP status. Anything but 200 means Music Assistant
   // rejected the command (e.g. a provider that is signed out cannot play its
   // stations); tell the user instead of silently doing nothing.
-  function reportActionStatus(command, httpCode) {
+  function reportActionStatus(command, httpCode, elapsedSec, args) {
     if (!httpCode || httpCode === "200" || httpCode === "000") return
-    console.warn("[music-assistant] " + command + " -> HTTP " + httpCode)
+    console.warn("[music-assistant] " + command + " -> HTTP " + httpCode + " after " + (elapsedSec || 0).toFixed(1) + "s")
+    // A play that fails only after the server's 15 s wait is a stuck stream
+    // slot, not a bad pick: reset the provider and retry (see tryStreamSlotHeal).
+    if (httpCode === "500" && MaApi.isPlayCommand(command) && (elapsedSec || 0) >= 12
+        && root.tryStreamSlotHeal(command, args))
+      return
     var isPlay = command === "player_queues/play_media"
     var what = isPlay ? "Couldn't play that" : "Command failed (" + command.split("/").pop() + ")"
     var hint = isPlay && httpCode === "500" ? " — check the provider is signed in to Music Assistant" : ""
     root.showOsd("Music Assistant", "dialog-warning", what + hint + " [" + httpCode + "]")
+  }
+
+  // ------------------------------------------------- stream-slot self-heal
+  //
+  // Music Assistant lets some providers (Pandora) stream once at a time. When a
+  // stream dies quietly the server still counts it, and every later play waits
+  // 15 s and fails: "Pandora has reached its limit of 1 concurrent source
+  // streams". The HTTP reply is a bare 500, so the plugin recognises the case
+  // by its timing (a 500 after >= 12 s on a play command), looks up which
+  // provider serves the item, reloads that provider (the same fix done by hand
+  // on 2026-10-06 and 2026-10-07), and retries the play once.
+  property bool healInProgress: false
+  property bool healRetry: false
+  property double lastHealAt: 0
+
+  function tryStreamSlotHeal(command, args) {
+    if (root.healInProgress || root.healRetry) return false
+    if (Date.now() - root.lastHealAt < 60000) return false
+    var uri = command === "player_queues/play_media" && args ? args.media
+      : (root.queueInfo && root.queueInfo.current_item ? root.queueInfo.current_item.uri
+        : (root.activeMedia ? root.activeMedia.uri : ""))
+    if (!uri) return false
+    root.healInProgress = true
+    root.lastHealAt = Date.now()
+    healLookup.send(root.api("music/item_by_uri", { uri: uri }, "heal-lookup"), { command: command, args: args })
+    return true
+  }
+
+  MaRequest {
+    id: healLookup
+    label: "heal lookup"
+    onFinished: function(data, ctx) {
+      var instances = []
+      var domain = ""
+      if (data && Array.isArray(data.provider_mappings)) {
+        for (var i = 0; i < data.provider_mappings.length; i++) {
+          var m = data.provider_mappings[i]
+          if (!m || !m.provider_instance || m.provider_instance === "library" || m.provider_instance === "builtin") continue
+          instances.push(String(m.provider_instance))
+          if (!domain) domain = String(m.provider_domain || m.provider_instance)
+        }
+      }
+      if (instances.length === 0) {
+        root.healInProgress = false
+        root.showOsd("Music Assistant", "dialog-warning", "Couldn't play that [500]")
+        return
+      }
+      var name = domain.charAt(0).toUpperCase() + domain.slice(1)
+      // Before resetting, make sure the slot is not in honest use: Pandora really
+      // does allow one stream per account, and a reload would cut off a room
+      // that is genuinely playing it.
+      healQueues.send(root.api("player_queues/all", {}, "heal-queues"),
+        { command: ctx.command, args: ctx.args, instance: instances[0], name: name })
+    }
+  }
+
+  MaRequest {
+    id: healQueues
+    label: "heal queues"
+    onFinished: function(data, ctx) {
+      var target = ctx.args && ctx.args.queue_id ? String(ctx.args.queue_id) : root.activePlayerId
+      var busyRoom = ""
+      if (Array.isArray(data)) {
+        for (var i = 0; i < data.length; i++) {
+          var q = data[i]
+          if (!q || q.state !== "playing" || String(q.queue_id) === target) continue
+          var item = q.current_item || {}
+          var sd = item.streamdetails || {}
+          var uses = String(sd.provider || "") === ctx.instance
+          var maps = item.media_item && Array.isArray(item.media_item.provider_mappings) ? item.media_item.provider_mappings : []
+          for (var j = 0; j < maps.length && !uses; j++)
+            if (maps[j] && String(maps[j].provider_instance) === ctx.instance) uses = true
+          if (uses) { busyRoom = String(q.display_name || q.queue_id); break }
+        }
+      }
+      if (busyRoom) {
+        // Not a stuck slot: the one stream is in use elsewhere. Say so, change nothing.
+        root.healInProgress = false
+        console.warn("[music-assistant] " + ctx.name + " is already playing in " + busyRoom + "; not resetting")
+        root.showOsd("Music Assistant", "dialog-warning",
+          ctx.name + " is already playing in " + busyRoom + " — it allows one stream at a time")
+        return
+      }
+      console.warn("[music-assistant] stream slot stuck; reloading provider " + ctx.instance + " and retrying " + ctx.command)
+      root.showOsd("Music Assistant", "view-refresh", ctx.name + " stream was stuck — resetting and retrying")
+      root.runAction("config/providers/reload", { instance_id: ctx.instance }, function(code, status, http) {
+        root.healInProgress = false
+        if (code !== 0 || (http && http !== "200")) {
+          root.showOsd("Music Assistant", "dialog-warning", "Couldn't reset " + ctx.name + " — restart Music Assistant")
+          return
+        }
+        // One retry. If it fails again the normal warning shows (healRetry blocks a loop).
+        root.healRetry = true
+        root.runAction(ctx.command, ctx.args, function() { root.healRetry = false })
+      })
+    }
   }
 
   Timer {

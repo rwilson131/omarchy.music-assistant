@@ -5,6 +5,14 @@ All notable changes to this plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.5] - 2026-10-08
+
+### Added
+- Stream-slot self-heal. Music Assistant lets Pandora stream once per account, and when a stream dies quietly the server keeps counting it, so every later play waits 15 s and fails with a bare HTTP 500 (`ProviderStreamLimitError` in the server log). A play-family command that fails with 500 after 12 s or more now looks up which provider serves the item, checks every other queue, and then either warns that the provider is already playing in another room (Pandora genuinely allows one stream, so nothing is reset) or reloads that provider and retries the play once. One heal per minute; a failed retry shows the normal warning. Reload is the same recovery done by hand on 2026-10-06 and 2026-10-07.
+
+### Changed
+- Play-family commands (play, resume, play_media, play_index, next, previous) get a 25 s curl cap instead of 8 s so the server's 15 s wait can finish and be reported. Action replies now carry the elapsed time alongside the HTTP status.
+
 ## [1.1.4] - 2026-10-08
 
 ### Added

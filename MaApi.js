@@ -71,7 +71,9 @@ function _buildCurlScript(url, bodyJson, maxTime, includeOutput) {
     "-H 'Content-Type: application/json' -H '@'\"$F\" " +
     // Without the body, print only the HTTP status so callers can report
     // failures (Music Assistant answers errors with a non-200 status).
-    (includeOutput ? "" : "-o /dev/null -w '%{http_code}' ") +
+    // The elapsed time lets the service tell a stuck stream slot (the server
+    // waits 15 s before answering 500) from an immediate rejection.
+    (includeOutput ? "" : "-o /dev/null -w '%{http_code} %{time_total}' ") +
     "'" + escapedUrl + "/api' " +
     "-d '" + escapedBody + "'\n"
 }
@@ -92,15 +94,22 @@ function buildArgs(url, token, command, args, messageId, maxTime) {
   }
 }
 
-// Script + token for an action; the reply is only the HTTP status.
-function buildActionArgs(url, token, command, args, messageId) {
+// Commands that start or move playback. They get a longer curl cap so the
+// server's 15 s stream-slot wait can finish and report, instead of curl giving
+// up at 8 s and the plugin never learning why the play failed.
+var PLAY_COMMANDS = ["player_queues/play_media", "player_queues/play", "player_queues/resume",
+  "player_queues/play_index", "player_queues/next", "player_queues/previous"]
+function isPlayCommand(command) { return PLAY_COMMANDS.indexOf(command) !== -1 }
+
+// Script + token for an action; the reply is the HTTP status and elapsed seconds.
+function buildActionArgs(url, token, command, args, messageId, maxTime) {
   var body = {
     message_id: messageId !== undefined ? messageId : "omarchy-play-" + (counter++),
     command: command,
     args: args || {}
   }
   return {
-    script: _buildCurlScript(url, JSON.stringify(body), "8", false),
+    script: _buildCurlScript(url, JSON.stringify(body), maxTime || "8", false),
     token: token
   }
 }
