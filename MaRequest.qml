@@ -10,7 +10,8 @@ import Quickshell.Io
 //   MaRequest { id: req; onFinished: function(data, ctx) { ... } }
 //   req.send(MaApi.buildArgs(url, token, "players/all", {}), { any: "context" })
 //
-// A send() while a request is in flight is ignored, like Process itself.
+// A send() while a request is in flight retains the latest request and starts
+// it when the current process exits. Intermediate duplicates are superseded.
 Process {
   id: request
 
@@ -18,6 +19,8 @@ Process {
   // serve a sequence of related calls (favorites per media type).
   property var context: ({})
   property string authToken: ""
+  property var pendingPayload: null
+  property var pendingContext: ({})
   // Short label for error messages, e.g. "players".
   property string label: "request"
 
@@ -27,12 +30,22 @@ Process {
   readonly property bool busy: running
 
   function send(payload, ctx) {
-    if (!payload || running) return false
+    if (!payload) return false
+    if (running) {
+      request.pendingPayload = payload
+      request.pendingContext = ctx || ({})
+      return true
+    }
     request.context = ctx || ({})
     request.authToken = payload.token || ""
     request.command = [Quickshell.env("SHELL") || "/bin/bash", "-c", payload.script]
     request.running = true
     return true
+  }
+
+  function clearPending() {
+    request.pendingPayload = null
+    request.pendingContext = ({})
   }
 
   stdinEnabled: true
@@ -56,5 +69,13 @@ Process {
       }
       request.finished(data, request.context)
     }
+  }
+
+  onExited: {
+    if (request.pendingPayload === null) return
+    var payload = request.pendingPayload
+    var ctx = request.pendingContext
+    request.clearPending()
+    Qt.callLater(function() { request.send(payload, ctx) })
   }
 }

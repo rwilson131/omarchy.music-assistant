@@ -75,6 +75,7 @@ Item {
 
   property var searchResults: null
   property string searchQuery: ""
+  property int searchGeneration: 0
   property int searchRevision: 0
   property var favorites: ({ tracks: [], albums: [], artists: [], playlists: [], radio: [] })
   property int favoritesRevision: 0
@@ -1070,16 +1071,22 @@ Item {
 
   function search(query) {
     if (!query) return
+    var generation = root.searchGeneration + 1
+    root.searchGeneration = generation
     root.searchQuery = query
-    // Uncached searches across every provider can take 10 s; allow 30.
+    root.searchResults = null
+    // Uncached searches across every provider can take 10 s; allow 30. The
+    // request component retains the latest search if another is already busy.
     searchRequest.send(root.api("music/search", {
       search_query: query,
       limit: root.config.searchLimit || 20,
       media_types: ["track", "album", "artist", "playlist", "radio", "podcast", "audiobook"]
-    }, "search-" + Date.now(), "30"))
+    }, "search-" + Date.now(), "30"), { generation: generation, query: query })
   }
 
   function clearSearch() {
+    root.searchGeneration = root.searchGeneration + 1
+    searchRequest.clearPending()
     root.searchResults = null
     root.searchQuery = ""
   }
@@ -1093,7 +1100,8 @@ Item {
   MaRequest {
     id: searchRequest
     label: "search"
-    onFinished: function(data) {
+    onFinished: function(data, ctx) {
+      if (!ctx || ctx.generation !== root.searchGeneration || ctx.query !== root.searchQuery) return
       if (!data || typeof data !== "object") return
       root.searchResults = {
         tracks: root.mapItems(data.tracks, MaApi.MAX_SEARCH_TRACKS),
@@ -1383,46 +1391,49 @@ Item {
   property string browsePath: ""
   property string browseName: "Music Assistant"
   property bool browseLoading: false
+  property int browseGeneration: 0
   property int browseRevision: 0
 
   function browseRoot() {
-    root.browseStack = []
-    root.browse("", "Music Assistant")
+    root.browse("", "Music Assistant", [])
   }
 
-  function browse(path, name) {
+  function browse(path, name, targetStack) {
     if (!root.ready) return
+    var generation = root.browseGeneration + 1
+    root.browseGeneration = generation
     root.browseLoading = true
+    var stack = Array.isArray(targetStack) ? targetStack.slice() : root.browseStack.slice()
     browseRequest.send(root.api("music/browse", path ? { path: path } : {}, "browse-" + Date.now(), "30"),
-      { path: path || "", name: name || "Music Assistant" })
+      { path: path || "", name: name || "Music Assistant", stack: stack, generation: generation })
   }
 
   function browseInto(item) {
     if (!item) return
     var stack = root.browseStack.slice()
     stack.push({ path: root.browsePath, name: root.browseName })
-    root.browseStack = stack
-    root.browse(item.path || item.uri, item.name)
+    root.browse(item.path || item.uri, item.name, stack)
   }
 
   function browseBack() {
     if (root.browseStack.length === 0) return
     var stack = root.browseStack.slice()
     var prev = stack.pop()
-    root.browseStack = stack
-    root.browse(prev.path, prev.name)
+    root.browse(prev.path, prev.name, stack)
   }
 
   MaRequest {
     id: browseRequest
     label: "browse"
     onFinished: function(data, ctx) {
+      if (!ctx || ctx.generation !== root.browseGeneration) return
       var list = Array.isArray(data) ? data : []
       root.browseItems = root.mapItems(list.filter(function(it) {
         return it && it.name !== ".." && !(it.media_type === "folder" && it.path === "root")
       }), MaApi.MAX_QUEUE_ITEMS)
       root.browsePath = ctx.path
       root.browseName = ctx.name
+      root.browseStack = ctx.stack || []
       root.browseRevision = root.browseRevision + 1
       root.browseLoading = false
     }
@@ -1435,6 +1446,7 @@ Item {
   property var drillItems: []
   property var drillItem: null
   property bool drillLoading: false
+  property int drillGeneration: 0
   property int drillRevision: 0
 
   function openCollection(item) {
@@ -1444,14 +1456,19 @@ Item {
       : item.media_type === "artist" ? "music/artists/artist_tracks"
       : ""
     if (!cmd) return false
+    var generation = root.drillGeneration + 1
+    root.drillGeneration = generation
     root.drillItem = item
     root.drillItems = []
     root.drillLoading = true
-    drillRequest.send(root.api(cmd, { item_id: item.item_id, provider_instance_id_or_domain: item.provider }, "drill-" + Date.now(), "30"))
+    drillRequest.send(root.api(cmd, { item_id: item.item_id, provider_instance_id_or_domain: item.provider }, "drill-" + Date.now(), "30"),
+      { generation: generation })
     return true
   }
 
   function closeCollection() {
+    root.drillGeneration = root.drillGeneration + 1
+    drillRequest.clearPending()
     root.drillItem = null
     root.drillItems = []
     root.drillLoading = false
@@ -1460,7 +1477,8 @@ Item {
   MaRequest {
     id: drillRequest
     label: "collection"
-    onFinished: function(data) {
+    onFinished: function(data, ctx) {
+      if (!ctx || ctx.generation !== root.drillGeneration) return
       root.drillItems = root.mapItems(data, MaApi.MAX_QUEUE_ITEMS)
       root.drillRevision = root.drillRevision + 1
       root.drillLoading = false
