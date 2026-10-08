@@ -70,7 +70,7 @@ A header shows the active player and its state. Eight tabs down the side:
 |-----|--------------|
 | **Now** | Artwork, title, transport (previous, play/pause, next, shuffle, repeat, favorite, web UI), progress bar (click to seek), volume slider and mute. Chips for Crossfade, Autoplay, Don't stop the music, a sleep timer (click cycles 15 → 30 → 60 → 90 min → off) and Stop. |
 | **Players** | Every player, sorted active → playing → idle → groups → unavailable. Click makes a player active and moves the queue to it; right-click mutes. **Join** groups a speaker with the active player, **Leave** removes it, **Ungroup** dissolves the active player's group. The volume slider moves the group when the active player leads one. |
-| **Queue** | Click plays an item, right-click removes it. Per-row buttons move it up, down, to the end, or remove it. **Save** names the queue as a new playlist; **Clear** empties it. |
+| **Queue** | Click plays an item, right-click removes it. Per-row buttons move it up, down, to the end, or remove it. **Save** (or `Ctrl+S`) asks for a name and saves the queue as a new library playlist, which appears in Lists a few seconds later; **Clear** empties it. |
 | **Search** | Searches tracks, albums, artists, playlists, radio, podcasts and audiobooks, with a filter chip per type. |
 | **Browse** | Walks the server's providers and folders (SiriusXM channels, Pandora stations, local files, …). Folders open, items play. A filter box appears for long folders. |
 | **Favorites** | Favorited tracks, albums, artists, playlists and radio. Right-click removes a favorite. |
@@ -89,6 +89,7 @@ remove instead). Album, artist and playlist rows play the whole collection.
 | `Ctrl+1` … `Ctrl+8` | Jump to a tab in sidebar order |
 | `Tab` / `Shift+Tab` | Next / previous tab |
 | `Space` | Play/pause on the Now tab |
+| `Ctrl+S` | Queue tab: name the queue and save it as a playlist |
 | `Enter` | Run the search / save the playlist name |
 
 ## IPC

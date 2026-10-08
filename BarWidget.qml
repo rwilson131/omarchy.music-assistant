@@ -131,6 +131,13 @@ BarWidget {
   function close() { popupOpen = false }
   function openSection(s) { popupSection = s; popupOpen = true }
 
+  // Show the playlist-name field under the queue header and put the
+  // keyboard in it. Deferred so the field is visible before it takes focus.
+  function openQueueSave() {
+    queueSaveOpen = true
+    Qt.callLater(function() { queueSaveName.forceActiveFocus() })
+  }
+
   // Per-tab setup, run both when the popup opens and when the tab changes:
   // focus the search field, refresh the lists, load the browse root.
   function activatePopupSection() {
@@ -295,6 +302,10 @@ BarWidget {
           event.accepted = true
         } else if (event.key === Qt.Key_Space && root.popupSection === "now" && root.service) {
           root.service.playPause()
+          event.accepted = true
+        } else if (event.key === Qt.Key_S && (event.modifiers & Qt.ControlModifier) && root.popupSection === "queue") {
+          // Ctrl+S on the Queue tab: name and save the queue as a playlist.
+          root.openQueueSave()
           event.accepted = true
         }
       }
@@ -720,10 +731,7 @@ BarWidget {
                     enabled: root.serviceReady && root.service && root.service.queue.length > 0
                     opacity: enabled ? 1.0 : 0.4
                     active: root.queueSaveOpen
-                    onClicked: {
-                      root.queueSaveOpen = !root.queueSaveOpen
-                      if (root.queueSaveOpen) Qt.callLater(function() { queueSaveName.forceActiveFocus() })
-                    }
+                    onClicked: root.queueSaveOpen ? (root.queueSaveOpen = false) : root.openQueueSave()
                   }
                   Button {
                     text: "Clear"
