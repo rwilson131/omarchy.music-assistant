@@ -277,19 +277,21 @@ BarWidget {
         if (event.key === Qt.Key_Escape) {
           root.popupOpen = false
           event.accepted = true
-        } else if (event.modifiers === Qt.ControlModifier) {
-          var tabs = root.tabOrder
-          var n = parseInt(event.text)
-          if (!isNaN(n) && n >= 1 && n <= tabs.length) {
-            root.popupSection = tabs[n - 1]
+        } else if (event.modifiers === Qt.ControlModifier && event.key >= Qt.Key_1 && event.key <= Qt.Key_9) {
+          // Ctrl+1 .. Ctrl+8: jump to a tab. Match the key code; event.text
+          // is not reliable with Control held.
+          var n = event.key - Qt.Key_1
+          if (n < root.tabOrder.length) {
+            root.popupSection = root.tabOrder[n]
             event.accepted = true
           }
-        } else if (event.key === Qt.Key_Tab) {
-          var tabs2 = root.tabOrder
-          var idx = tabs2.indexOf(root.popupSection)
-          if (event.modifiers === Qt.ShiftModifier) idx = (idx - 1 + tabs2.length) % tabs2.length
-          else idx = (idx + 1) % tabs2.length
-          root.popupSection = tabs2[idx]
+        } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
+          // Tab / Shift+Tab cycle the tabs. Shift+Tab arrives as Backtab or
+          // as Tab with the Shift modifier, depending on the input path.
+          var idx = root.tabOrder.indexOf(root.popupSection)
+          var backward = event.key === Qt.Key_Backtab || (event.modifiers & Qt.ShiftModifier)
+          var step = backward ? -1 : 1
+          root.popupSection = root.tabOrder[(idx + step + root.tabOrder.length) % root.tabOrder.length]
           event.accepted = true
         } else if (event.key === Qt.Key_Space && root.popupSection === "now" && root.service) {
           root.service.playPause()

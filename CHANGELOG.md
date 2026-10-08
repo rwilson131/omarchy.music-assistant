@@ -5,6 +5,12 @@ All notable changes to this plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-10-08
+
+### Fixed
+- Shift+Tab now cycles tabs backwards; it was treated as Tab because the handler only recognised Qt's Backtab form, and the compositor delivers Tab with the Shift modifier instead.
+- Ctrl+1 … Ctrl+8 match the key code rather than the key event's text, which is not reliable with Control held. All popup shortcuts in the README (Escape, Ctrl+N, Tab / Shift+Tab, Space, Enter) were verified by driving the open popup with a virtual keyboard.
+
 ## [1.1.2] - 2026-10-07
 
 ### Fixed
