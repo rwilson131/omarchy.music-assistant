@@ -1,5 +1,7 @@
 # Music Assistant plugin for Omarchy
 
+[![Plugin checks](https://github.com/rwilson131/omarchy.music-assistant/actions/workflows/plugin-checks.yml/badge.svg)](https://github.com/rwilson131/omarchy.music-assistant/actions/workflows/plugin-checks.yml)
+
 Control a [Music Assistant](https://music-assistant.io/) server from the
 Omarchy bar: now playing with transport and volume, every player with
 grouping, the queue, search, a library browser, favorites, playlists and
@@ -230,7 +232,8 @@ Run the dependency-free headless regression suite before publishing changes:
 It exercises the QML JavaScript libraries with Node's built-in test runner,
 checks the shell helper and JSON files, enforces safety-critical QML source
 invariants, and runs `omarchy plugin validate` when Omarchy is available. It
-does not start Quickshell or touch the compositor.
+does not start Quickshell or touch the compositor. GitHub Actions runs the
+same command on every push and pull request.
 
 Files under the plugin directory hot-reload on save, with one catch:
 `Service.qml` reloads as a service while the bar widget keeps its reference

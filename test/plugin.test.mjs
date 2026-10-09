@@ -139,6 +139,20 @@ test("QML source retains disconnect, latest-request and badge guards", async () 
   assert.equal(widget.includes("showSourceBadge: true"), false)
 })
 
+test("CI is least-privilege, bounded and commit-pinned", async () => {
+  const workflow = await text(".github/workflows/plugin-checks.yml")
+
+  assert.match(workflow, /^permissions:\n  contents: read$/m)
+  assert.match(workflow, /cancel-in-progress: true/)
+  assert.match(workflow, /timeout-minutes: 5/)
+  assert.match(workflow, /actions\/checkout@11d5960a326750d5838078e36cf38b85af677262/)
+  assert.match(workflow, /persist-credentials: false/)
+  assert.match(workflow, /actions\/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020/)
+  assert.match(workflow, /node-version: 22/)
+  assert.match(workflow, /run: \.\/test\/run/)
+  assert.equal(/uses:\s+[^\s]+@(v\d+|main|master)\b/.test(workflow), false)
+})
+
 test("manifest, preview and third-party notices remain publication-ready", async () => {
   const manifest = JSON.parse(await text("manifest.json"))
   assert.equal(manifest.schemaVersion, 1)
