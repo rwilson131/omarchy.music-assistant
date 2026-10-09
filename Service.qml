@@ -724,7 +724,7 @@ Item {
       // session. Enqueue actions ("next" and "add") must not coalesce, because
       // each represents a distinct item the user asked to keep in the queue.
       if (MaApi.isQueueReplacingPlay(command, args))
-        root.pendingActions = root.pendingActions.filter(function(a) { return a.command !== "player_queues/play_media" })
+        root.pendingActions = MaApi.withoutQueueReplacingPlays(root.pendingActions)
       if (root.pendingActions.length < 20)
         root.pendingActions.push({ command: command, args: args, onDone: onDone })
       return

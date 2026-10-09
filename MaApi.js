@@ -107,6 +107,16 @@ function isQueueReplacingPlay(command, args) {
   return command === "player_queues/play_media" && !!args && args.option === "replace"
 }
 
+// Drop only older play-now selections before appending a newer one. Enqueue
+// requests share the play_media command, so filtering by command alone would
+// silently discard distinct "next" and "add" actions.
+function withoutQueueReplacingPlays(actions) {
+  if (!Array.isArray(actions)) return []
+  return actions.filter(function(action) {
+    return !action || !isQueueReplacingPlay(action.command, action.args)
+  })
+}
+
 // Script + token for an action; the reply is the HTTP status and elapsed seconds.
 function buildActionArgs(url, token, command, args, messageId, maxTime) {
   var body = {

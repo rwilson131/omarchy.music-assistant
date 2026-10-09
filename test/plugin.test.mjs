@@ -102,6 +102,18 @@ test("play-now coalesces while enqueue actions remain distinct", async () => {
   assert.equal(api.isQueueReplacingPlay("player_queues/next", {}), false)
   assert.equal(api.isPlayCommand("player_queues/play_media"), true)
   assert.equal(api.isPlayCommand("players/cmd/volume_set"), false)
+
+  const oldReplace = { command: "player_queues/play_media", args: { media: "old", option: "replace" } }
+  const playNext = { command: "player_queues/play_media", args: { media: "next", option: "next" } }
+  const add = { command: "player_queues/play_media", args: { media: "add", option: "add" } }
+  const volume = { command: "players/cmd/volume_set", args: { volume_level: 40 } }
+  const retained = api.withoutQueueReplacingPlays([oldReplace, playNext, add, volume])
+
+  assert.equal(retained.length, 3)
+  assert.equal(retained[0], playNext)
+  assert.equal(retained[1], add)
+  assert.equal(retained[2], volume)
+  assert.equal(api.withoutQueueReplacingPlays(null).length, 0)
 })
 
 test("QML source retains media-key file safety guards", async () => {
@@ -126,6 +138,7 @@ test("QML source retains disconnect, latest-request and badge guards", async () 
   assert.match(service, /function applyPlayers\(list\)[\s\S]*!Array\.isArray\(list\)[\s\S]*root\.connected = false[\s\S]*return false/)
   assert.match(service, /if \(!root\.applyPlayers\(data\)\)[\s\S]*root\.pollInFlight = false[\s\S]*return/)
   assert.match(service, /MaApi\.isQueueReplacingPlay\(command, args\)/)
+  assert.match(service, /root\.pendingActions = MaApi\.withoutQueueReplacingPlays\(root\.pendingActions\)/)
   assert.match(service, /ctx\.generation !== root\.searchGeneration/)
   assert.match(service, /ctx\.generation !== root\.browseGeneration/)
   assert.match(service, /ctx\.generation !== root\.drillGeneration/)
