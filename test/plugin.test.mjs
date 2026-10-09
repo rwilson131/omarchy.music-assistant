@@ -222,6 +222,7 @@ test("manifest, preview and third-party notices remain publication-ready", async
   const manifest = JSON.parse(await text("manifest.json"))
   assert.equal(manifest.schemaVersion, 1)
   assert.equal(manifest.id, "io.github.rwilson131.music-assistant")
+  assert.equal(manifest.version, "1.1.6")
   assert.deepEqual([...manifest.kinds].sort(), ["bar-widget", "service"])
 
   const png = await readFile(new URL("preview.png", root))
@@ -240,6 +241,8 @@ test("manifest, preview and third-party notices remain publication-ready", async
   const [readme, notices, apache] = await Promise.all([
     text("README.md"), text("THIRD_PARTY_NOTICES.md"), text("LICENSES/Apache-2.0.txt"),
   ])
+  const changelog = await text("CHANGELOG.md")
+  assert.match(changelog, /^## \[Unreleased\]\n\n## \[1\.1\.6\] - 2026-10-09$/m)
   assert.match(readme, /^## Requirements$/m)
   assert.match(readme, /^## Removal$/m)
   assert.match(readme, /^## Pandora stream recovery$/m)

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-10-09
+
 ### Added
 - A dependency-free headless regression suite covers configuration parsing, API token/response safeguards, media mapping, queue-action classification, publication assets, and safety-critical QML source invariants without starting Quickshell or touching the compositor.
 - A least-privilege GitHub Actions workflow runs the suite on pushes and pull requests with commit-pinned actions, read-only repository permissions, concurrency cancellation, and a five-minute timeout.
