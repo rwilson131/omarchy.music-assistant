@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The README now lists runtime requirements and gives an explicit removal, token-revocation, and leftover-media-key recovery procedure for marketplace users.
+
 ### Fixed
 - Media-key installation and removal now validate that the marked block is complete and unique before editing `bindings.lua`. Malformed markers fail closed instead of risking truncation. Successful changes use a same-directory temporary file, atomic rename, preserved permissions and a rollback backup.
 - A failed `players/all` poll now marks the service disconnected and stops that poll chain instead of retaining a stale connected/playing state. Contextual volume keys consequently fall back to local audio during a Music Assistant outage and recover on the next successful poll.

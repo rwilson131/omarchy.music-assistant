@@ -11,6 +11,17 @@ fork of the plugin originally written by
 [manologarciadev](https://github.com/manologarciadev/omarchy.music-assistant).
 See [Credits](#credits). Tested against Music Assistant 2.10.5 and Omarchy 4.0.
 
+## Requirements
+
+- Omarchy 4 with the Quattro shell and its `qs` IPC client.
+- A reachable Music Assistant server (tested with 2.10.5).
+- A long-lived Music Assistant access token; the token grants administrator
+  access to that server.
+- `bash` and `curl` for API requests. The optional contextual volume-key
+  helper also uses `jq`. These commands are included in a normal Omarchy
+  installation.
+- Hyprland is required only for the optional Media Keys integration.
+
 ## Setup
 
 ```sh
@@ -153,6 +164,28 @@ untouched and reports the problem instead of guessing what to remove.
 
 Turn the switch off before `omarchy plugin remove` if you want the keys back
 with Omarchy; removing the plugin does not edit `bindings.lua`.
+
+## Removal
+
+1. While the plugin is still configured, turn **Media keys** off in the popup,
+   or run:
+   ```sh
+   omarchy-shell io.github.rwilson131.music-assistant mediaKeys off
+   ```
+2. Confirm the normal Omarchy media keys work, then remove the plugin:
+   ```sh
+   omarchy plugin remove io.github.rwilson131.music-assistant
+   ```
+3. Revoke the plugin's long-lived token in Music Assistant if nothing else
+   uses it.
+
+If the plugin was removed before Media Keys was turned off, open
+`~/.config/hypr/bindings.lua`, remove the complete block from
+`-- BEGIN music-assistant media-keys` through
+`-- END music-assistant media-keys` (including both markers), and run
+`hyprctl reload`. Inspect the adjacent `bindings.lua.bak.music-assistant.*`
+files before restoring one; each is a point-in-time rollback copy and a newer
+one may itself contain the marked block.
 
 ## Security
 
