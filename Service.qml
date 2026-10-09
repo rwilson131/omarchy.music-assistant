@@ -829,27 +829,24 @@ Item {
     id: healLookup
     label: "heal lookup"
     onFinished: function(data, ctx) {
-      var instances = []
-      var domain = ""
-      if (data && Array.isArray(data.provider_mappings)) {
-        for (var i = 0; i < data.provider_mappings.length; i++) {
-          var m = data.provider_mappings[i]
-          if (!m || !m.provider_instance || m.provider_instance === "library" || m.provider_instance === "builtin") continue
-          instances.push(String(m.provider_instance))
-          if (!domain) domain = String(m.provider_domain || m.provider_instance)
-        }
-      }
-      if (instances.length === 0) {
+      // Never generalise a slow HTTP 500 into permission to reload an arbitrary
+      // provider. This recovery signature is confirmed only for Pandora.
+      var provider = MaApi.pandoraProvider(data)
+      if (!provider) {
         root.healInProgress = false
         root.showOsd("Music Assistant", "dialog-warning", "Couldn't play that [500]")
         return
       }
-      var name = domain.charAt(0).toUpperCase() + domain.slice(1)
       // Before resetting, make sure the slot is not in honest use: Pandora really
       // does allow one stream per account, and a reload would cut off a room
       // that is genuinely playing it.
-      healQueues.send(root.api("player_queues/all", {}, "heal-queues"),
-        { command: ctx.command, args: ctx.args, instance: instances[0], name: name })
+      healQueues.send(root.api("player_queues/all", {}, "heal-queues"), {
+        command: ctx.command,
+        args: ctx.args,
+        instance: provider.instance,
+        domain: provider.domain,
+        name: provider.name
+      })
     }
   }
 
@@ -857,20 +854,27 @@ Item {
     id: healQueues
     label: "heal queues"
     onFinished: function(data, ctx) {
+      // The absence of queue evidence is not proof that Pandora's one stream is
+      // free. Fail closed if the check timed out, returned malformed JSON, or a
+      // playing room lacks enough provider metadata to classify safely.
+      if (!Array.isArray(data)) {
+        root.healInProgress = false
+        console.warn("[music-assistant] could not verify Pandora queue use; not resetting")
+        root.showOsd("Music Assistant", "dialog-warning", "Couldn't verify Pandora use — not resetting it")
+        return
+      }
       var target = ctx.args && ctx.args.queue_id ? String(ctx.args.queue_id) : root.activePlayerId
       var busyRoom = ""
-      if (Array.isArray(data)) {
-        for (var i = 0; i < data.length; i++) {
-          var q = data[i]
-          if (!q || q.state !== "playing" || String(q.queue_id) === target) continue
-          var item = q.current_item || {}
-          var sd = item.streamdetails || {}
-          var uses = String(sd.provider || "") === ctx.instance
-          var maps = item.media_item && Array.isArray(item.media_item.provider_mappings) ? item.media_item.provider_mappings : []
-          for (var j = 0; j < maps.length && !uses; j++)
-            if (maps[j] && String(maps[j].provider_instance) === ctx.instance) uses = true
-          if (uses) { busyRoom = String(q.display_name || q.queue_id); break }
+      var unknownRoom = ""
+      for (var i = 0; i < data.length; i++) {
+        var q = data[i]
+        var use = MaApi.queueProviderUse(q, target, ctx.instance, ctx.domain)
+        if (use === "busy") {
+          busyRoom = String(q.display_name || q.queue_id || "another room")
+          break
         }
+        if (use === "unknown" && !unknownRoom)
+          unknownRoom = String(q && (q.display_name || q.queue_id) || "another room")
       }
       if (busyRoom) {
         // Not a stuck slot: the one stream is in use elsewhere. Say so, change nothing.
@@ -878,6 +882,12 @@ Item {
         console.warn("[music-assistant] " + ctx.name + " is already playing in " + busyRoom + "; not resetting")
         root.showOsd("Music Assistant", "dialog-warning",
           ctx.name + " is already playing in " + busyRoom + " — it allows one stream at a time")
+        return
+      }
+      if (unknownRoom) {
+        root.healInProgress = false
+        console.warn("[music-assistant] could not classify provider use in " + unknownRoom + "; not resetting Pandora")
+        root.showOsd("Music Assistant", "dialog-warning", "Couldn't verify Pandora use in " + unknownRoom + " — not resetting it")
         return
       }
       console.warn("[music-assistant] stream slot stuck; reloading provider " + ctx.instance + " and retrying " + ctx.command)

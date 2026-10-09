@@ -116,6 +116,54 @@ test("play-now coalesces while enqueue actions remain distinct", async () => {
   assert.equal(api.withoutQueueReplacingPlays(null).length, 0)
 })
 
+test("Pandora recovery requires confirmed, complete queue evidence", async () => {
+  const api = await qmlLibrary("MaApi.js")
+  const provider = api.pandoraProvider({ provider_mappings: [
+    { provider_instance: "library", provider_domain: "library" },
+    { provider_instance: "pandora--account-1", provider_domain: "pandora" },
+  ] })
+
+  assert.equal(provider.instance, "pandora--account-1")
+  assert.equal(provider.domain, "pandora")
+  assert.equal(api.pandoraProvider({ provider_mappings: [
+    { provider_instance: "spotify--account-1", provider_domain: "spotify" },
+  ] }), null)
+  assert.equal(api.pandoraProvider(null), null)
+  assert.equal(api.pandoraProvider({ provider_mappings: [
+    { provider_instance: `pandora--${"x".repeat(100)}`, provider_domain: "pandora" },
+  ] }), null)
+
+  const target = "office"
+  assert.equal(api.queueProviderUse({
+    queue_id: "kitchen", state: "playing",
+    current_item: { streamdetails: { provider: "pandora" } },
+  }, target, provider.instance, provider.domain), "busy")
+  assert.equal(api.queueProviderUse({
+    queue_id: "kitchen", state: "playing",
+    current_item: { media_item: { provider_mappings: [
+      { provider_instance: "pandora--account-1", provider_domain: "pandora" },
+    ] } },
+  }, target, provider.instance, provider.domain), "busy")
+  assert.equal(api.queueProviderUse({
+    queue_id: "kitchen", state: "playing",
+    current_item: { streamdetails: { provider: "spotify--account-1" } },
+  }, target, provider.instance, provider.domain), "clear")
+  assert.equal(api.queueProviderUse({
+    queue_id: "kitchen", state: "playing", current_item: {},
+  }, target, provider.instance, provider.domain), "unknown")
+  assert.equal(api.queueProviderUse({
+    queue_id: "kitchen", state: "playing",
+    current_item: { media_item: { provider: "library" } },
+  }, target, provider.instance, provider.domain), "unknown")
+  assert.equal(api.queueProviderUse({
+    queue_id: "kitchen", state: "idle", current_item: {},
+  }, target, provider.instance, provider.domain), "clear")
+  assert.equal(api.queueProviderUse({
+    queue_id: target, state: "playing", current_item: {},
+  }, target, provider.instance, provider.domain), "skip")
+  assert.equal(api.queueProviderUse(null, target, provider.instance, provider.domain), "unknown")
+})
+
 test("QML source retains media-key file safety guards", async () => {
   const service = await text("Service.qml")
 
@@ -142,6 +190,10 @@ test("QML source retains disconnect, latest-request and badge guards", async () 
   assert.match(service, /ctx\.generation !== root\.searchGeneration/)
   assert.match(service, /ctx\.generation !== root\.browseGeneration/)
   assert.match(service, /ctx\.generation !== root\.drillGeneration/)
+  assert.match(service, /var provider = MaApi\.pandoraProvider\(data\)/)
+  assert.match(service, /if \(!Array\.isArray\(data\)\)[\s\S]*not resetting/)
+  assert.match(service, /var use = MaApi\.queueProviderUse\(q, target, ctx\.instance, ctx\.domain\)/)
+  assert.match(service, /if \(unknownRoom\)[\s\S]*not resetting Pandora/)
 
   assert.match(request, /property var pendingPayload: null/)
   assert.match(request, /if \(running\)[\s\S]*request\.pendingPayload = payload/)
@@ -190,6 +242,8 @@ test("manifest, preview and third-party notices remain publication-ready", async
   ])
   assert.match(readme, /^## Requirements$/m)
   assert.match(readme, /^## Removal$/m)
+  assert.match(readme, /^## Pandora stream recovery$/m)
+  assert.match(readme, /Other providers are never reloaded automatically\./)
   assert.match(readme, /omarchy plugin remove io\.github\.rwilson131\.music-assistant/)
   assert.match(notices, /e3a8d7b19a6d5f46b8262e0ca202a26dc85a3aec/)
   assert.match(apache, /^\s*Apache License\s*$/m)

@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rapid `Play next` and `Add to queue` actions are preserved in order instead of being coalesced as though they were repeated play-now selections. A new play-now (`replace`) selection still supersedes older pending media picks to protect slow players from request storms.
 - Search, Browse, and collection requests now retain the latest request made while a prior request is in flight. Generation checks prevent older replies from appearing under a newer query, path, or playlist, and clearing Search or closing a collection invalidates pending results.
 - The documented `showSourceBadge` setting now controls provider badges consistently across Search, Browse, Favorites, Lists, collection drill-down, and Recent; Recent rows also receive their previously missing provider label.
+- Stream-slot recovery now reloads only a confirmed Pandora provider and fails closed when the other queues cannot be fetched or a playing queue lacks enough provider metadata to classify safely. Domain and instance identifiers are both recognized when detecting legitimate Pandora playback in another room.
 
 ## [1.1.5] - 2026-10-08
 

@@ -230,6 +230,67 @@ function providerDomain(item) {
   return item.provider || ""
 }
 
+function providerBase(value) {
+  if (value === null || value === undefined) return ""
+  return String(value).toLowerCase().split("--")[0]
+}
+
+// The timed 500 signature has only been confirmed for Pandora. Return the
+// exact provider instance to reload only when the item has a Pandora mapping.
+function pandoraProvider(item) {
+  if (!item || !Array.isArray(item.provider_mappings)) return null
+  var mappings = boundedArray(item.provider_mappings, 8)
+  for (var i = 0; i < mappings.length; i++) {
+    var mapping = mappings[i]
+    if (!mapping || !mapping.provider_instance) continue
+    var domain = providerBase(mapping.provider_domain || mapping.provider_instance)
+    if (domain === "pandora") {
+      var instance = String(mapping.provider_instance)
+      // Never reload a truncated or otherwise ambiguous provider identifier.
+      if (instance.length === 0 || instance.length > 100) return null
+      return { instance: instance, domain: "pandora", name: "Pandora" }
+    }
+  }
+  return null
+}
+
+function providerValueMatches(value, instance, domain) {
+  if (value === null || value === undefined || String(value).length === 0) return false
+  var candidate = String(value).toLowerCase()
+  return candidate === String(instance || "").toLowerCase() || providerBase(candidate) === providerBase(domain)
+}
+
+// Tri-state queue evidence for a fail-closed provider reload. A playing queue
+// without provider metadata is "unknown", not evidence that the slot is free.
+function queueProviderUse(queue, targetQueueId, instance, domain) {
+  if (!queue || typeof queue !== "object") return "unknown"
+  if (String(queue.queue_id || "") === String(targetQueueId || "")) return "skip"
+  if (queue.state !== "playing") return "clear"
+  var item = queue.current_item
+  if (!item || typeof item !== "object") return "unknown"
+  var evidence = []
+  function addEvidence(value) {
+    var base = providerBase(value)
+    // Library/builtin identify the catalog wrapper, not the streaming backend,
+    // so they cannot prove that a playing queue is unrelated to Pandora.
+    if (base && base !== "library" && base !== "builtin") evidence.push(value)
+  }
+  var details = item.streamdetails
+  if (details && details.provider) addEvidence(details.provider)
+  var media = item.media_item
+  if (media && media.provider) addEvidence(media.provider)
+  var mappings = media && Array.isArray(media.provider_mappings) ? boundedArray(media.provider_mappings, 8) : []
+  for (var i = 0; i < mappings.length; i++) {
+    if (!mappings[i]) continue
+    if (mappings[i].provider_instance) addEvidence(mappings[i].provider_instance)
+    if (mappings[i].provider_domain) addEvidence(mappings[i].provider_domain)
+  }
+  if (evidence.length === 0) return "unknown"
+  for (var j = 0; j < evidence.length; j++)
+    if (providerValueMatches(evidence[j], instance, domain)) return "busy"
+  return "clear"
+}
+
 function mediaTypeLabel(t) {
   if (!t) return ""
   var map = {

@@ -136,6 +136,21 @@ omarchy-shell io.github.rwilson131.music-assistant playPause
 | `openWebUI` | Open the Music Assistant web UI in the default browser |
 | `listsSnapshot`, `browseSnapshot` | JSON counts and first rows of the lists, for scripts and debugging |
 
+## Pandora stream recovery
+
+Pandora permits one concurrent stream per account. If Music Assistant leaves
+that stream slot stuck, a playback request waits about 15 seconds and then
+returns HTTP 500. For that specific signature, the plugin confirms that the
+requested item has a Pandora provider mapping and checks every other Music
+Assistant queue. It reloads only that Pandora provider instance and retries
+once when all queue evidence shows the slot is unused. It does not reload when
+another room is using Pandora, when a queue cannot be classified, or when
+lookup data is missing or malformed. Recovery is limited to one attempt per
+minute.
+
+Provider reload temporarily reinitializes the Pandora integration in Music
+Assistant. Other providers are never reloaded automatically.
+
 ## Media keys
 
 Off by default. Turn it on with the **Media keys** switch at the top right of
@@ -217,7 +232,8 @@ move_item_end, clear, transfer, save_as_playlist), `music/search`,
 `music/browse`, `music/recently_played_items`, `music/<type>/library_items`,
 `music/playlists/playlist_tracks`, `music/playlists/add_playlist_tracks`,
 `music/albums/album_tracks`, `music/artists/artist_tracks`,
-`music/favorites/add_item`, `music/favorites/remove_item`.
+`music/favorites/add_item`, `music/favorites/remove_item`, `music/item_by_uri`,
+`player_queues/all`, `config/providers/reload` (Pandora recovery only).
 
 See https://music-assistant.io/api/ for the full API.
 
