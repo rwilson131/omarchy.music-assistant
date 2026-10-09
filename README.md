@@ -225,8 +225,9 @@ server as semi-trusted:
   fetched through the server's image proxy. `file://`, `data:` and
   `javascript:` are dropped.
 - The response body is capped at 8 MB (`curl --max-filesize`).
-- The bearer token never appears in a command line: it reaches curl over
-  stdin and a 0600 temp file (`-H @file`).
+- The bearer token never appears in a command line: API requests send it to
+  curl over stdin and a 0600 temp file (`-H @file`), while config saves send
+  the complete JSON to the atomic writer over stdin.
 - `config.json` is written with mode 600.
 
 ## API commands used

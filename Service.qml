@@ -433,6 +433,13 @@ Item {
     id: configSaver
     property string savePath: ""
     property string saveJson: ""
+    stdinEnabled: true
+    onStarted: {
+      // The config contains the server-admin token. Send it over stdin so it
+      // never appears in bash's argv or /proc/<pid>/cmdline.
+      write(saveJson + "\n")
+      saveJson = ""
+    }
     // Setting running = true on a busy Process is a no-op, so a save
     // requested while one is in flight is replayed when it finishes.
     property bool pending: false
@@ -449,9 +456,8 @@ Item {
     }
   }
 
-  function configSaveScript(path, json) {
+  function configSaveScript(path) {
     var safePath = path.replace(/'/g, "'\\''")
-    var safeJson = json.replace(/'/g, "'\\''")
     // Defense against symlink pre-creation at a predictable path:
     //   1. mktemp creates a uniquely-named file in the same directory as
     //      the final config, with mode 0600 from the start (umask 077 +
@@ -459,7 +465,8 @@ Item {
     //   2. Open the file with exec 3>"$T" *before* any other lookup of
     //      $T happens. The fd stays bound to the original inode even if
     //      a same-user attacker races to replace $T with a symlink.
-    //   3. Write through fd 3 (printf >&3), close fd (exec 3>&-).
+    //   3. Read compact JSON from stdin, keeping the token out of argv, then
+    //      write through fd 3 (printf >&3) and close it (exec 3>&-).
     //   4. mv -f: atomic rename(2) on Linux; replaces the destination
     //      atomically regardless of what the destination was (regular
     //      file, symlink, missing).
@@ -473,7 +480,8 @@ Item {
       "F='" + safePath + "'\n" +
       "T=$(mktemp -p \"$D\" ma-config.XXXXXXXXXX)\n" +
       "exec 3> \"$T\"\n" +
-      "printf '%s\\n' '" + safeJson + "' >&3\n" +
+      "IFS= read -r json\n" +
+      "printf '%s\\n' \"$json\" >&3\n" +
       "exec 3>&-\n" +
       "chmod 600 \"$T\"\n" +
       "mv -f \"$T\" \"$F\"\n" +
@@ -484,11 +492,13 @@ Item {
     if (!root.ready || !root.config) return
     if (configSaver.running) { configSaver.pending = true; return }
     var path = root.configPath
-    var json = JSON.stringify(root.config, null, 2)
+    // Compact JSON is one line, allowing the shell to read the complete value
+    // from stdin without placing any part of it in argv.
+    var json = JSON.stringify(root.config)
     configSaver.savePath = path
     configSaver.saveJson = json
     configSaver.command = [Quickshell.env("SHELL") || "/bin/bash", "-c",
-      root.configSaveScript(path, json)]
+      root.configSaveScript(path)]
     configSaver.running = true
   }
 

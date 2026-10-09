@@ -182,6 +182,22 @@ test("QML source retains media-key file safety guards", async () => {
   assert.match(service, /if \(next\) installMediaKeysBindings\(\)\s*else uninstallMediaKeysBindings\(\)/)
 })
 
+test("config persistence keeps the admin token out of process arguments", async () => {
+  const service = await text("Service.qml")
+  const saver = service.match(/Process \{\s*id: configSaver[\s\S]*?function applyConfig\(text\)/)
+
+  assert.ok(saver)
+  assert.match(saver[0], /stdinEnabled: true/)
+  assert.match(saver[0], /onStarted:[\s\S]*write\(saveJson \+ "\\n"\)/)
+  assert.match(saver[0], /function configSaveScript\(path\)/)
+  assert.match(saver[0], /IFS= read -r json/)
+  assert.match(saver[0], /printf '%s\\\\n' \\"\$json\\" >&3/)
+  assert.match(saver[0], /JSON\.stringify\(root\.config\)/)
+  assert.match(saver[0], /root\.configSaveScript\(path\)/)
+  assert.equal(saver[0].includes("safeJson"), false)
+  assert.equal(saver[0].includes("configSaveScript(path, json)"), false)
+})
+
 test("QML source retains disconnect, latest-request and badge guards", async () => {
   const [service, request, widget] = await Promise.all([
     text("Service.qml"),
@@ -248,7 +264,7 @@ test("manifest, preview and third-party notices remain publication-ready", async
     text("README.md"), text("THIRD_PARTY_NOTICES.md"), text("LICENSES/Apache-2.0.txt"),
   ])
   const changelog = await text("CHANGELOG.md")
-  assert.match(changelog, /^## \[Unreleased\]\n\n## \[1\.1\.6\] - 2026-10-09$/m)
+  assert.match(changelog, /^## \[Unreleased\]\n\n### Security\n[\s\S]*?\n\n## \[1\.1\.6\] - 2026-10-09$/m)
   assert.match(readme, /^## Requirements$/m)
   assert.match(readme, /^## Removal$/m)
   assert.match(readme, /^## Pandora stream recovery$/m)
