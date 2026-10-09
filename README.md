@@ -79,7 +79,7 @@ A header shows the active player and its state. Eight tabs down the side:
 
 | Tab | What it does |
 |-----|--------------|
-| **Now** | Artwork, title, transport (previous, play/pause, next, shuffle, repeat, favorite, web UI), progress bar (click to seek), volume slider and mute. Chips for Crossfade, Autoplay, Don't stop the music, a sleep timer (click cycles 15 → 30 → 60 → 90 min → off) and Stop. |
+| **Now** | Album artwork when Music Assistant provides it, with a music-note fallback when it does not; title, transport (previous, play/pause, next, shuffle, repeat, favorite, web UI), progress bar (click to seek), volume slider and mute. Chips for Crossfade, Autoplay, Don't stop the music, a sleep timer (click cycles 15 → 30 → 60 → 90 min → off) and Stop. |
 | **Players** | Every player, sorted active → playing → idle → groups → unavailable. Click makes a player active and moves the queue to it; right-click mutes. **Join** groups a speaker with the active player, **Leave** removes it, **Ungroup** dissolves the active player's group. The volume slider moves the group when the active player leads one. |
 | **Queue** | Click plays an item, right-click removes it. Per-row buttons move it up, down, to the end, or remove it. **Save** (or `Ctrl+S`) asks for a name and saves the queue as a new library playlist, which appears in Lists a few seconds later; **Clear** empties it. |
 | **Search** | Searches tracks, albums, artists, playlists, radio, podcasts and audiobooks, with a filter chip per type. |
