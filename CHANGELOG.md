@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - The README now lists runtime requirements and gives an explicit removal, token-revocation, and leftover-media-key recovery procedure for marketplace users.
+- The media-key documentation explains that Omarchy's existing Alt+Volume Up/Down bindings remain available for precise local-output control while ordinary volume keys control Music Assistant.
 - The Music Assistant mark now has an exact source-commit notice, modification record, trademark disclaimer, and bundled Apache-2.0 license copy alongside the plugin's unchanged MIT license.
 - The marketplace preview now uses a generic Office player and the no-artwork fallback instead of personal room metadata and third-party album artwork. The README clarifies that supplied album artwork is displayed normally.
 

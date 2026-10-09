@@ -167,6 +167,13 @@ Hyprland:
   otherwise to Omarchy's normal local-audio volume. A volume key while muted
   only unmutes. If the shell or the plugin is down the keys keep local
   behaviour.
+- Hold **Alt** while pressing **Volume Up/Down** to use Omarchy's existing
+  precise local-volume bindings (1% steps), even while the ordinary volume
+  keys are controlling Music Assistant. This is useful for a YouTube video or
+  other audio playing locally in Chromium. It adjusts the complete local audio
+  output, not Chromium alone. Omarchy does not provide a corresponding
+  **Alt+Mute** binding. These Alt bindings belong to Omarchy and are not
+  installed or removed by this plugin.
 
 Off removes the block and reloads. The state is `installMediaKeys` in
 `config.json`, so you can also set it there. A block already on disk at

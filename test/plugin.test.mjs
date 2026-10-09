@@ -244,6 +244,8 @@ test("manifest, preview and third-party notices remain publication-ready", async
   assert.match(readme, /^## Removal$/m)
   assert.match(readme, /^## Pandora stream recovery$/m)
   assert.match(readme, /Other providers are never reloaded automatically\./)
+  assert.match(readme, /Hold \*\*Alt\*\* while pressing \*\*Volume Up\/Down\*\*/)
+  assert.match(readme, /These Alt bindings belong to Omarchy and are not[\s\S]*installed or removed by this plugin\./)
   assert.match(readme, /omarchy plugin remove io\.github\.rwilson131\.music-assistant/)
   assert.match(notices, /e3a8d7b19a6d5f46b8262e0ca202a26dc85a3aec/)
   assert.match(apache, /^\s*Apache License\s*$/m)
