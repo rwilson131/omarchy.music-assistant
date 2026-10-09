@@ -231,7 +231,15 @@ either. QML errors appear in `journalctl --user -t omarchy-shell`.
 
 - Original plugin: [manologarciadev/omarchy.music-assistant](https://github.com/manologarciadev/omarchy.music-assistant),
   MIT. This fork keeps that license; see `LICENSE`.
-- The Music Assistant mark in the popup header (`MaIcon.qml`) is drawn from
-  the path in [music-assistant/frontend](https://github.com/music-assistant/frontend)
-  `public/favicon.svg`, Apache-2.0. Music Assistant is a project of the Open
-  Home Foundation; this plugin is not affiliated with it.
+- The Music Assistant mark in the popup header (`MaIcon.qml`) is adapted from
+  [music-assistant/frontend](https://github.com/music-assistant/frontend)
+  `public/favicon.svg`, Apache-2.0. Its exact source commit, modifications,
+  license copy, and trademark disclaimer are recorded in
+  [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+## License
+
+The plugin is distributed under the [MIT License](LICENSE). Third-party
+material remains under its identified license; see
+[Third-party notices](THIRD_PARTY_NOTICES.md) and the files under
+[`LICENSES/`](LICENSES/).

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - The README now lists runtime requirements and gives an explicit removal, token-revocation, and leftover-media-key recovery procedure for marketplace users.
+- The Music Assistant mark now has an exact source-commit notice, modification record, trademark disclaimer, and bundled Apache-2.0 license copy alongside the plugin's unchanged MIT license.
 
 ### Fixed
 - Media-key installation and removal now validate that the marked block is complete and unique before editing `bindings.lua`. Malformed markers fail closed instead of risking truncation. Successful changes use a same-directory temporary file, atomic rename, preserved permissions and a rollback backup.
