@@ -174,6 +174,12 @@ test("QML source retains media-key file safety guards", async () => {
   assert.match(service, /chmod --reference=\\"\$F\\" \\"\$edited\\"/)
   assert.match(service, /mv -f -- \\"\$edited\\" \\"\$F\\"/)
   assert.equal(service.includes('> \\"$F.tmp\\"'), false)
+
+  const probe = service.match(/Process \{\s*id: mediaKeysProbe[\s\S]*?\/\/ --------------------------------------------------- config persistence/)
+  assert.ok(probe)
+  assert.equal(probe[0].includes("setMediaKeysEnabled(true)"), false)
+  assert.match(probe[0], /Existing media-key block left unchanged/)
+  assert.match(service, /if \(next\) installMediaKeysBindings\(\)\s*else uninstallMediaKeysBindings\(\)/)
 })
 
 test("QML source retains disconnect, latest-request and badge guards", async () => {
@@ -249,6 +255,7 @@ test("manifest, preview and third-party notices remain publication-ready", async
   assert.match(readme, /Other providers are never reloaded automatically\./)
   assert.match(readme, /Hold \*\*Alt\*\* while pressing \*\*Volume Up\/Down\*\*/)
   assert.match(readme, /These Alt bindings belong to Omarchy and are not[\s\S]*installed or removed by this plugin\./)
+  assert.match(readme, /A legacy block already on disk at[\s\S]*never adopted, updated, removed, or used to change the[\s\S]*stored setting automatically\./)
   assert.match(readme, /omarchy plugin remove io\.github\.rwilson131\.music-assistant/)
   assert.match(notices, /e3a8d7b19a6d5f46b8262e0ca202a26dc85a3aec/)
   assert.match(apache, /^\s*Apache License\s*$/m)

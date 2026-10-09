@@ -176,9 +176,11 @@ Hyprland:
   installed or removed by this plugin.
 
 Off removes the block and reloads. The state is `installMediaKeys` in
-`config.json`, so you can also set it there. A block already on disk at
-startup (an upgrade from 1.0.x, or a reinstall) turns the switch on and
-rewrites the block for the current install.
+`config.json`, so you can also set it there. A legacy block already on disk at
+startup is detected but never adopted, updated, removed, or used to change the
+stored setting automatically. The plugin reports it and leaves the file
+untouched. Explicitly turn **Media keys** on (or run `mediaKeys on`) to adopt
+and update it, or run `mediaKeys off` to remove it.
 
 Before every successful install, update, or removal, the plugin keeps a
 `bindings.lua.bak.music-assistant.*` rollback copy beside `bindings.lua` and

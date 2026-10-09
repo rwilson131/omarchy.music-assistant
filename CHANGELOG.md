@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The marketplace preview now uses a generic Office player and the no-artwork fallback instead of personal room metadata and third-party album artwork. All ancillary metadata, including its timestamp, is stripped; the README clarifies that supplied album artwork is displayed normally.
 
 ### Fixed
+- A legacy media-key block is now reported and left untouched when `installMediaKeys` is absent or false instead of being adopted and rewritten automatically. Explicit `mediaKeys on` adopts or updates it; explicit `mediaKeys off` removes it even when the stored setting is already false.
 - Media-key installation and removal now validate that the marked block is complete and unique before editing `bindings.lua`. Malformed markers fail closed instead of risking truncation. Successful changes use a same-directory temporary file, atomic rename, preserved permissions and a rollback backup.
 - A failed `players/all` poll now marks the service disconnected and stops that poll chain instead of retaining a stale connected/playing state. Contextual volume keys consequently fall back to local audio during a Music Assistant outage and recover on the next successful poll.
 - Rapid `Play next` and `Add to queue` actions are preserved in order instead of being coalesced as though they were repeated play-now selections. A new play-now (`replace`) selection still supersedes older pending media picks to protect slow players from request storms.
