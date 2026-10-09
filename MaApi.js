@@ -101,6 +101,12 @@ var PLAY_COMMANDS = ["player_queues/play_media", "player_queues/play", "player_q
   "player_queues/play_index", "player_queues/next", "player_queues/previous"]
 function isPlayCommand(command) { return PLAY_COMMANDS.indexOf(command) !== -1 }
 
+// Only a play-now selection replaces the queue and may supersede older pending
+// media picks. "next" and "add" are distinct enqueue requests and must remain.
+function isQueueReplacingPlay(command, args) {
+  return command === "player_queues/play_media" && !!args && args.option === "replace"
+}
+
 // Script + token for an action; the reply is the HTTP status and elapsed seconds.
 function buildActionArgs(url, token, command, args, messageId, maxTime) {
   var body = {

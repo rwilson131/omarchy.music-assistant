@@ -221,6 +221,17 @@ See https://music-assistant.io/api/ for the full API.
 
 ## Development
 
+Run the dependency-free headless regression suite before publishing changes:
+
+```sh
+./test/run
+```
+
+It exercises the QML JavaScript libraries with Node's built-in test runner,
+checks the shell helper and JSON files, enforces safety-critical QML source
+invariants, and runs `omarchy plugin validate` when Omarchy is available. It
+does not start Quickshell or touch the compositor.
+
 Files under the plugin directory hot-reload on save, with one catch:
 `Service.qml` reloads as a service while the bar widget keeps its reference
 to the old one, which leaves the popup unresponsive, and `BarWidget.qml`

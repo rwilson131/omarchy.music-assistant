@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- A dependency-free headless regression suite covers configuration parsing, API token/response safeguards, media mapping, queue-action classification, publication assets, and safety-critical QML source invariants without starting Quickshell or touching the compositor.
+
 ### Changed
 - The README now lists runtime requirements and gives an explicit removal, token-revocation, and leftover-media-key recovery procedure for marketplace users.
 - The Music Assistant mark now has an exact source-commit notice, modification record, trademark disclaimer, and bundled Apache-2.0 license copy alongside the plugin's unchanged MIT license.

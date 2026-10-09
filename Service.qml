@@ -723,8 +723,7 @@ Item {
       // picks: replaying every click while the server was slow wedged a Sonos
       // session. Enqueue actions ("next" and "add") must not coalesce, because
       // each represents a distinct item the user asked to keep in the queue.
-      var replacesQueue = command === "player_queues/play_media" && args && args.option === "replace"
-      if (replacesQueue)
+      if (MaApi.isQueueReplacingPlay(command, args))
         root.pendingActions = root.pendingActions.filter(function(a) { return a.command !== "player_queues/play_media" })
       if (root.pendingActions.length < 20)
         root.pendingActions.push({ command: command, args: args, onDone: onDone })

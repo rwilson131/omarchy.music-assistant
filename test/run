@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$ROOT"
+
+node --test test/*.test.mjs
+bash -n scripts/contextual-volume-control
+jq -e . manifest.json config.example.json >/dev/null
+
+if command -v omarchy >/dev/null 2>&1; then
+  omarchy plugin validate .
+fi
