@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-10-09
+
 ### Security
 - Config persistence now sends the complete JSON, including the Music Assistant admin token, to the atomic writer over stdin instead of embedding it in `bash -c` arguments visible through process listings and normally readable procfs.
 
