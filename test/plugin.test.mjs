@@ -234,7 +234,7 @@ test("manifest, preview and third-party notices remain publication-ready", async
     chunkTypes.push(png.subarray(offset + 4, offset + 8).toString("ascii"))
     offset += 12 + length
   }
-  for (const metadataChunk of ["eXIf", "iTXt", "tEXt", "zTXt"])
+  for (const metadataChunk of ["eXIf", "iTXt", "tEXt", "tIME", "zTXt"])
     assert.equal(chunkTypes.includes(metadataChunk), false, `${metadataChunk} metadata must be stripped`)
 
   const [readme, notices, apache] = await Promise.all([
