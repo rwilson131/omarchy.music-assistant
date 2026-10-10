@@ -3,8 +3,8 @@ import Quickshell
 import Quickshell.Io
 
 // One request to the Music Assistant JSON API, run through curl by the
-// script MaApi.buildArgs() produces. The bearer token travels over stdin
-// (never argv); the reply is parsed and unwrapped from {result: ...} when
+// script MaApi.buildArgs() produces. The bearer token and JSON body travel
+// over stdin (never argv); the reply is parsed and unwrapped from {result: ...} when
 // the server wraps it, since some commands answer with a bare list.
 //
 //   MaRequest { id: req; onFinished: function(data, ctx) { ... } }
