@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- All Music Assistant API request bodies now travel over stdin into a private mode-0600 temporary file used by curl, keeping search text, playlist names, media URIs, player identifiers, and other request data out of both `bash -c` and curl arguments visible through process listings and normally readable procfs.
+
 ## [1.1.7] - 2026-10-09
 
 ### Security

@@ -51,31 +51,32 @@ function safeImageUrl(v, maxLen) {
   return truncate(str, maxLen)
 }
 
-// Bash script that reads the bearer token from stdin, writes it to a
-// 0600-mode temp file, runs curl with the Authorization header sourced
-// from that file (-H @file), and removes the file on exit. The token
-// never appears in any process's argv, only on stdin (which is not
-// visible via /proc/PID/cmdline). The --max-filesize flag caps the
-// response body so a malicious or malfunctioning server cannot exhaust
-// shell memory.
-function _buildCurlScript(url, bodyJson, maxTime, includeOutput) {
+// Bash script that reads the bearer token and compact JSON request body from
+// stdin, writes each to a 0600-mode temp file, and runs curl with only those
+// private file paths in argv. Neither credentials nor user-provided request
+// data (such as search text and playlist names) appear in bash/curl argv or
+// /proc/PID/cmdline. The --max-filesize flag caps the response body so a
+// malicious or malfunctioning server cannot exhaust shell memory.
+function _buildCurlScript(url, maxTime, includeOutput) {
   var escapedUrl = url.replace(/'/g, "'\\''")
-  var escapedBody = bodyJson.replace(/'/g, "'\\''")
   return "set -e\n" +
-    "F=$(mktemp -t ma-auth.XXXXXX)\n" +
-    "chmod 600 \"$F\"\n" +
-    "trap 'rm -f \"$F\"' EXIT\n" +
+    "AUTH=$(mktemp -t ma-auth.XXXXXX)\n" +
+    "BODY=$(mktemp -t ma-body.XXXXXX)\n" +
+    "chmod 600 \"$AUTH\" \"$BODY\"\n" +
+    "trap 'rm -f \"$AUTH\" \"$BODY\"' EXIT\n" +
     "IFS= read -r token\n" +
-    "printf '%s' \"Authorization: Bearer ${token}\" > \"$F\"\n" +
+    "IFS= read -r body\n" +
+    "printf '%s' \"Authorization: Bearer ${token}\" > \"$AUTH\"\n" +
+    "printf '%s' \"$body\" > \"$BODY\"\n" +
     "curl -sS --max-time " + maxTime + " --max-filesize " + MAX_RESPONSE_BYTES + " -X POST " +
-    "-H 'Content-Type: application/json' -H '@'\"$F\" " +
+    "-H 'Content-Type: application/json' -H '@'\"$AUTH\" " +
     // Without the body, print only the HTTP status so callers can report
     // failures (Music Assistant answers errors with a non-200 status).
     // The elapsed time lets the service tell a stuck stream slot (the server
     // waits 15 s before answering 500) from an immediate rejection.
     (includeOutput ? "" : "-o /dev/null -w '%{http_code} %{time_total}' ") +
     "'" + escapedUrl + "/api' " +
-    "-d '" + escapedBody + "'\n"
+    "--data-binary '@'\"$BODY\"\n"
 }
 
 // Script + token for a command whose reply the caller wants. maxTime (seconds,
@@ -86,11 +87,12 @@ function buildArgs(url, token, command, args, messageId, maxTime) {
     command: command,
     args: args || {}
   }
-  // Return an object so the caller can pipe the token over stdin instead of
-  // passing it as an argv element.
+  // Return token and body separately so the caller can pipe both over stdin
+  // instead of passing either as an argv element.
   return {
-    script: _buildCurlScript(url, JSON.stringify(body), maxTime || "10", true),
-    token: token
+    script: _buildCurlScript(url, maxTime || "10", true),
+    token: token,
+    body: JSON.stringify(body)
   }
 }
 
@@ -125,8 +127,9 @@ function buildActionArgs(url, token, command, args, messageId, maxTime) {
     args: args || {}
   }
   return {
-    script: _buildCurlScript(url, JSON.stringify(body), maxTime || "8", false),
-    token: token
+    script: _buildCurlScript(url, maxTime || "8", false),
+    token: token,
+    body: JSON.stringify(body)
   }
 }
 

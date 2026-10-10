@@ -748,6 +748,7 @@ Item {
     var payload = MaApi.buildActionArgs(root.config.url, root.config.token, command, args, undefined,
       MaApi.isPlayCommand(command) ? "25" : "8")
     actionProc.authToken = payload.token || ""
+    actionProc.requestBody = payload.body || ""
     actionProc.command = [Quickshell.env("SHELL") || "/bin/bash", "-c", payload.script]
     actionProc.onFinished = onDone || null
     actionProc.actionCommand = command
@@ -758,14 +759,16 @@ Item {
   Process {
     id: actionProc
     property string authToken: ""
+    property string requestBody: ""
     property var onFinished: null
     property string actionCommand: ""
     property var actionArgs: null
     stdinEnabled: true
     onStarted: {
-      if (authToken.length > 0) {
-        write(authToken + "\n")
+      if (authToken.length > 0 && requestBody.length > 0) {
+        write(authToken + "\n" + requestBody + "\n")
         authToken = ""
+        requestBody = ""
       }
     }
     property string httpCode: ""

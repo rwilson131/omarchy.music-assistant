@@ -19,6 +19,7 @@ Process {
   // serve a sequence of related calls (favorites per media type).
   property var context: ({})
   property string authToken: ""
+  property string requestBody: ""
   property var pendingPayload: null
   property var pendingContext: ({})
   // Short label for error messages, e.g. "players".
@@ -38,6 +39,7 @@ Process {
     }
     request.context = ctx || ({})
     request.authToken = payload.token || ""
+    request.requestBody = payload.body || ""
     request.command = [Quickshell.env("SHELL") || "/bin/bash", "-c", payload.script]
     request.running = true
     return true
@@ -50,9 +52,10 @@ Process {
 
   stdinEnabled: true
   onStarted: {
-    if (authToken.length > 0) {
-      write(authToken + "\n")
+    if (authToken.length > 0 && requestBody.length > 0) {
+      write(authToken + "\n" + requestBody + "\n")
       authToken = ""
+      requestBody = ""
     }
   }
 

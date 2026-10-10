@@ -45,19 +45,33 @@ test("configuration preserves explicit booleans and validates required values", 
   assert.equal(schema.parse(JSON.stringify({ url: "x" })).error, "missing token")
 })
 
-test("API requests keep bearer tokens out of argv and cap responses", async () => {
+test("API requests keep credentials and user data out of argv", async () => {
   const api = await qmlLibrary("MaApi.js")
   const token = "token-that-must-not-enter-argv"
-  const payload = api.buildArgs("https://music.example", token, "players/all", {}, "test", "17")
+  const query = "private search text must not enter argv"
+  const payload = api.buildArgs("https://music.example", token, "music/search",
+    { search_query: query }, "test", "17")
 
   assert.equal(payload.token, token)
+  assert.equal(JSON.parse(payload.body).args.search_query, query)
   assert.equal(payload.script.includes(token), false)
+  assert.equal(payload.script.includes(query), false)
+  assert.equal(payload.script.includes(payload.body), false)
   assert.match(payload.script, /IFS= read -r token/)
+  assert.match(payload.script, /IFS= read -r body/)
   assert.match(payload.script, /Authorization: Bearer \$\{token\}/)
+  assert.match(payload.script, /mktemp -t ma-auth\.XXXXXX/)
+  assert.match(payload.script, /mktemp -t ma-body\.XXXXXX/)
+  assert.match(payload.script, /chmod 600 "\$AUTH" "\$BODY"/)
+  assert.match(payload.script, /trap 'rm -f "\$AUTH" "\$BODY"' EXIT/)
+  assert.match(payload.script, /--data-binary '@'"\$BODY"/)
   assert.match(payload.script, /--max-filesize 8388608/)
   assert.match(payload.script, /--max-time 17/)
-  assert.match(payload.script, /mktemp -t ma-auth\.XXXXXX/)
-  assert.match(payload.script, /trap 'rm -f "\$F"' EXIT/)
+
+  const action = api.buildActionArgs("https://music.example", token,
+    "player_queues/save_as_playlist", { name: "private playlist name" }, "action", "8")
+  assert.equal(JSON.parse(action.body).args.name, "private playlist name")
+  assert.equal(action.script.includes("private playlist name"), false)
 })
 
 test("server-provided image URLs are restricted to HTTP(S)", async () => {
@@ -217,6 +231,12 @@ test("QML source retains disconnect, latest-request and badge guards", async () 
   assert.match(service, /var use = MaApi\.queueProviderUse\(q, target, ctx\.instance, ctx\.domain\)/)
   assert.match(service, /if \(unknownRoom\)[\s\S]*not resetting Pandora/)
 
+  assert.match(request, /property string requestBody: ""/)
+  assert.match(request, /request\.requestBody = payload\.body \|\| ""/)
+  assert.match(request, /write\(authToken \+ "\\n" \+ requestBody \+ "\\n"\)/)
+  assert.match(service, /actionProc\.requestBody = payload\.body \|\| ""/)
+  assert.match(service, /write\(authToken \+ "\\n" \+ requestBody \+ "\\n"\)/)
+
   assert.match(request, /property var pendingPayload: null/)
   assert.match(request, /if \(running\)[\s\S]*request\.pendingPayload = payload/)
   assert.match(request, /onExited:[\s\S]*Qt\.callLater\(function\(\) \{ request\.send\(payload, ctx\) \}\)/)
@@ -264,7 +284,7 @@ test("manifest, preview and third-party notices remain publication-ready", async
     text("README.md"), text("THIRD_PARTY_NOTICES.md"), text("LICENSES/Apache-2.0.txt"),
   ])
   const changelog = await text("CHANGELOG.md")
-  assert.match(changelog, /^## \[Unreleased\]\n\n## \[1\.1\.7\] - 2026-10-09\n\n### Security\n[\s\S]*?\n\n## \[1\.1\.6\] - 2026-10-09$/m)
+  assert.match(changelog, /^## \[Unreleased\]\n\n### Security\n[\s\S]*?\n\n## \[1\.1\.7\] - 2026-10-09\n\n### Security\n[\s\S]*?\n\n## \[1\.1\.6\] - 2026-10-09$/m)
   assert.match(readme, /^## Requirements$/m)
   assert.match(readme, /^## Removal$/m)
   assert.match(readme, /^## Pandora stream recovery$/m)
