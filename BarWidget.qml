@@ -626,7 +626,7 @@ BarWidget {
                       }
 
                       Column {
-                        width: parent.width - Style.space(34) - (groupBtn.visible ? groupBtn.width + Style.space(8) : 0)
+                        width: parent.width - Style.space(34) - (groupBtn.visible ? groupBtn.width + Style.space(8) : 0) - (moveBtn.visible ? moveBtn.width + Style.space(8) : 0)
                         spacing: Style.space(1)
                         anchors.verticalCenter: parent.verticalCenter
 
@@ -661,13 +661,30 @@ BarWidget {
                           root.service.toggleMute(playerRow.player.player_id)
                           return
                         }
-                        if (playerRow.isActive) return
-                        if (root.service.queue && root.service.queue.length > 0) {
-                          root.service.transferQueue(root.service.activePlayerId, playerRow.player.player_id)
-                        } else {
-                          root.service.activatePlayer(playerRow.player.player_id)
-                        }
+                        // Selecting a player only changes which one the popup
+                        // controls; what is playing anywhere is left alone. Moving
+                        // the queue is the explicit "Move here" button.
+                        if (!playerRow.isActive) root.service.activatePlayer(playerRow.player.player_id)
                       }
+                    }
+
+                    // Move the active player's queue to this one (stops it there).
+                    // Declared after the row's MouseArea so it receives the click.
+                    Button {
+                      id: moveBtn
+                      readonly property bool canMove: !playerRow.isActive && playerRow.available && root.service && root.service.queue.length > 0
+                      visible: canMove
+                      text: "Move here"
+                      tooltipText: "Move what " + (root.activePlayer ? root.activePlayer.name : "the active player") + " is playing to this player"
+                      foreground: root.bar.foreground
+                      fontSize: Style.font.caption
+                      bordered: true
+                      horizontalPadding: Style.space(6)
+                      verticalPadding: Style.space(2)
+                      anchors.right: groupBtn.visible ? groupBtn.left : parent.right
+                      anchors.rightMargin: groupBtn.visible ? Style.space(4) : playerRow.borderRight + Style.space(8)
+                      anchors.verticalCenter: parent.verticalCenter
+                      onClicked: if (root.service) root.service.transferQueue(root.service.activePlayerId, playerRow.player.player_id)
                     }
 
                     // Join / Leave / Ungroup. Declared after the row's MouseArea
@@ -699,7 +716,7 @@ BarWidget {
                 Text {
                   width: parent.width
                   wrapMode: Text.WordWrap
-                  text: "Click a player to make it active (moves the queue). Right-click mutes. Join / Leave group speakers with the active player."
+                  text: "Click a player to control it; nothing changes on the others. Move here carries the active player's queue over. Right-click mutes. Join / Leave group speakers with the active player."
                   color: Qt.darker(root.bar.foreground, 1.5)
                   font.family: root.bar.fontFamily
                   font.pixelSize: Style.font.caption
