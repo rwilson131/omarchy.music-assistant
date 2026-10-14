@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.9] - 2026-10-13
+
 ### Changed
 - Clicking a player on the Players tab now only selects it. It used to move the active player's queue there whenever the queue was not empty, which stopped the room you were listening in just to look at another one. Moving the queue is the explicit **Move here** button on each other player.
 
