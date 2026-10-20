@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.10] - 2026-10-19
+
 ### Fixed
 - Preserve parsed JSON arrays through the request callback on Qt 6.12 / Quickshell 0.3.2. Passing results through a QML `var` signal produced sequence objects that failed `Array.isArray`, falsely reporting `players/all returned non-list` even with a healthy server and valid token. Request consumers now use a direct JavaScript callback; strict array validation and response limits remain intact.
 - Add a real offscreen QML regression test for bare/wrapped arrays, nested lists, errors, null results and queued-request context. It runs when Quickshell is installed; it uses synthetic replies and no server credentials or playback commands.
