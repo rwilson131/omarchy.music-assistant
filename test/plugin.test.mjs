@@ -284,7 +284,7 @@ test("manifest, preview and third-party notices remain publication-ready", async
     text("README.md"), text("THIRD_PARTY_NOTICES.md"), text("LICENSES/Apache-2.0.txt"),
   ])
   const changelog = await text("CHANGELOG.md")
-  assert.match(changelog, /^## \[Unreleased\]\n\n## \[1\.1\.9\] - 2026-10-13\n\n### Changed\n[\s\S]*?\n\n## \[1\.1\.8\] - 2026-10-10\n\n### Security\n[\s\S]*?\n\n## \[1\.1\.7\] - 2026-10-09$/m)
+  assert.match(changelog, /^## \[Unreleased\]\n[\s\S]*?\n## \[1\.1\.9\] - 2026-10-13\n\n### Changed\n[\s\S]*?\n\n## \[1\.1\.8\] - 2026-10-10\n\n### Security\n[\s\S]*?\n\n## \[1\.1\.7\] - 2026-10-09$/m)
   assert.match(readme, /^## Requirements$/m)
   assert.match(readme, /^## Removal$/m)
   assert.match(readme, /^## Pandora stream recovery$/m)

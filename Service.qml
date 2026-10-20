@@ -567,7 +567,7 @@ Item {
   MaRequest {
     id: playersRequest
     label: "players"
-    onFinished: function(data) {
+    onResult: function(data) {
       // players/all is the connection health check. Do not continue the poll
       // with stale players after a timeout, invalid JSON or JSON-RPC error:
       // connected=false also makes contextual media keys fall back locally.
@@ -586,7 +586,7 @@ Item {
   MaRequest {
     id: queueInfoRequest
     label: "queue info"
-    onFinished: function(data) {
+    onResult: function(data) {
       root.applyQueueInfo(data)
       // Step 3 of 3.
       if (!root.activePlayerId || !queueRequest.send(root.api("player_queues/items", { queue_id: root.activePlayerId, limit: 200, offset: 0 }, "poll-queue")))
@@ -597,7 +597,7 @@ Item {
   MaRequest {
     id: queueRequest
     label: "queue"
-    onFinished: function(data) {
+    onResult: function(data) {
       root.applyQueue(data)
       root.pollInFlight = false
     }
@@ -847,7 +847,7 @@ Item {
   MaRequest {
     id: healLookup
     label: "heal lookup"
-    onFinished: function(data, ctx) {
+    onResult: function(data, ctx) {
       // Never generalise a slow HTTP 500 into permission to reload an arbitrary
       // provider. This recovery signature is confirmed only for Pandora.
       var provider = MaApi.pandoraProvider(data)
@@ -872,7 +872,7 @@ Item {
   MaRequest {
     id: healQueues
     label: "heal queues"
-    onFinished: function(data, ctx) {
+    onResult: function(data, ctx) {
       // The absence of queue evidence is not proof that Pandora's one stream is
       // free. Fail closed if the check timed out, returned malformed JSON, or a
       // playing room lacks enough provider metadata to classify safely.
@@ -1128,7 +1128,7 @@ Item {
   MaRequest {
     id: searchRequest
     label: "search"
-    onFinished: function(data, ctx) {
+    onResult: function(data, ctx) {
       if (!ctx || ctx.generation !== root.searchGeneration || ctx.query !== root.searchQuery) return
       if (!data || typeof data !== "object") return
       root.searchResults = {
@@ -1164,7 +1164,7 @@ Item {
   MaRequest {
     id: favoritesRequest
     label: "favorites"
-    onFinished: function(data, ctx) {
+    onResult: function(data, ctx) {
       var next = Object.assign({}, root.favorites)
       next[ctx.type] = root.mapItems(data, MaApi.MAX_FAVORITES_PER_TYPE)
       root.favorites = next
@@ -1181,7 +1181,7 @@ Item {
   MaRequest {
     id: playlistsRequest
     label: "playlists"
-    onFinished: function(data) {
+    onResult: function(data) {
       root.playlists = root.mapItems(data, MaApi.MAX_PLAYLISTS)
       root.playlistsRevision = root.playlistsRevision + 1
     }
@@ -1195,7 +1195,7 @@ Item {
   MaRequest {
     id: recentRequest
     label: "recent"
-    onFinished: function(data) {
+    onResult: function(data) {
       root.recentItems = MaApi.boundedArray(Array.isArray(data) ? data : [], MaApi.MAX_RECENT_ITEMS).map(function(it) {
         var m = MaApi.mapMediaItem(it, root.config.url)
         if (m) m.last_played = typeof it.last_played === "number" ? it.last_played : null
@@ -1453,7 +1453,7 @@ Item {
   MaRequest {
     id: browseRequest
     label: "browse"
-    onFinished: function(data, ctx) {
+    onResult: function(data, ctx) {
       if (!ctx || ctx.generation !== root.browseGeneration) return
       var list = Array.isArray(data) ? data : []
       root.browseItems = root.mapItems(list.filter(function(it) {
@@ -1505,7 +1505,7 @@ Item {
   MaRequest {
     id: drillRequest
     label: "collection"
-    onFinished: function(data, ctx) {
+    onResult: function(data, ctx) {
       if (!ctx || ctx.generation !== root.drillGeneration) return
       root.drillItems = root.mapItems(data, MaApi.MAX_QUEUE_ITEMS)
       root.drillRevision = root.drillRevision + 1

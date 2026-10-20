@@ -7,7 +7,7 @@ import Quickshell.Io
 // over stdin (never argv); the reply is parsed and unwrapped from {result: ...} when
 // the server wraps it, since some commands answer with a bare list.
 //
-//   MaRequest { id: req; onFinished: function(data, ctx) { ... } }
+//   MaRequest { id: req; onResult: function(data, ctx) { ... } }
 //   req.send(MaApi.buildArgs(url, token, "players/all", {}), { any: "context" })
 //
 // A send() while a request is in flight retains the latest request and starts
@@ -25,8 +25,11 @@ Process {
   // Short label for error messages, e.g. "players".
   property string label: "request"
 
-  // data is the parsed reply (unwrapped), or null when it was not JSON.
-  signal finished(var data, var context)
+  // Direct JS callback: Qt 6.12 marshals arrays passed through a QML var
+  // signal into sequence objects for which Array.isArray() is false (including
+  // nested lists). Keep parsed JSON in JS instead of weakening array validation.
+  // Arguments: parsed reply (unwrapped, or null), then request context.
+  property var onResult: null
 
   readonly property bool busy: running
 
@@ -70,7 +73,7 @@ Process {
       } catch (e) {
         console.warn("[music-assistant] " + request.label + ": reply is not JSON: " + e.message)
       }
-      request.finished(data, request.context)
+      if (typeof request.onResult === "function") request.onResult(data, request.context)
     }
   }
 
