@@ -94,7 +94,7 @@ test("media mapping bounds fields and proxies provider-relative artwork", async 
     media_type: "track",
     artists: [{ name: "Artist" }],
     album: { name: "Album" },
-    image: { path: "covers/42.jpg", provider: "library" },
+    image: { path: "covers/42.jpg", provider: "library", proxy_id: "a".repeat(64) },
     provider_mappings: Array.from({ length: 12 }, (_, i) => ({
       provider_domain: `provider-${i}`,
       provider_instance: `instance-${i}`,
@@ -104,7 +104,7 @@ test("media mapping bounds fields and proxies provider-relative artwork", async 
   assert.equal(mapped.artist, "Artist")
   assert.equal(mapped.album, "Album")
   assert.equal(mapped.provider_mappings.length, 8)
-  assert.match(mapped.image_url, /^http:\/\/music\.example:8095\/imageproxy\?path=covers%2F42\.jpg/)
+  assert.equal(mapped.image_url, "http://music.example:8095/imageproxy/" + "a".repeat(64) + "?size=160")
 })
 
 test("play-now coalesces while enqueue actions remain distinct", async () => {
@@ -219,8 +219,8 @@ test("QML source retains disconnect, latest-request and badge guards", async () 
     text("BarWidget.qml"),
   ])
 
-  assert.match(service, /function applyPlayers\(list\)[\s\S]*!Array\.isArray\(list\)[\s\S]*root\.connected = false[\s\S]*return false/)
-  assert.match(service, /if \(!root\.applyPlayers\(data\)\)[\s\S]*root\.pollInFlight = false[\s\S]*return/)
+  assert.match(service, /function applyPlayers\(list, ctx\)[\s\S]*!Array\.isArray\(list\)[\s\S]*root\.connected = false[\s\S]*return false/)
+  assert.match(service, /if \(!root\.applyPlayers\(data, ctx\)\)[\s\S]*root\.pollInFlight = false[\s\S]*return/)
   assert.match(service, /MaApi\.isQueueReplacingPlay\(command, args\)/)
   assert.match(service, /root\.pendingActions = MaApi\.withoutQueueReplacingPlays\(root\.pendingActions\)/)
   assert.match(service, /ctx\.generation !== root\.searchGeneration/)
@@ -239,7 +239,7 @@ test("QML source retains disconnect, latest-request and badge guards", async () 
 
   assert.match(request, /property var pendingPayload: null/)
   assert.match(request, /if \(running\)[\s\S]*request\.pendingPayload = payload/)
-  assert.match(request, /onExited:[\s\S]*Qt\.callLater\(function\(\) \{ request\.send\(payload, ctx\) \}\)/)
+  assert.match(request, /onExited:[\s\S]*Qt\.callLater\(function\(\) \{[\s\S]*generation === request\.connectionGeneration[\s\S]*request\.send\(payload, ctx\)/)
 
   assert.equal(occurrences(widget, "SearchResultRow {"), 6)
   assert.equal(occurrences(widget, "showSourceBadge: root.sourceBadgesEnabled"), 6)
@@ -264,7 +264,7 @@ test("manifest, preview and third-party notices remain publication-ready", async
   const manifest = JSON.parse(await text("manifest.json"))
   assert.equal(manifest.schemaVersion, 1)
   assert.equal(manifest.id, "io.github.rwilson131.music-assistant")
-  assert.equal(manifest.version, "1.1.10")
+  assert.equal(manifest.version, "1.1.11")
   assert.deepEqual([...manifest.kinds].sort(), ["bar-widget", "service"])
 
   const png = await readFile(new URL("preview.png", root))
@@ -284,7 +284,7 @@ test("manifest, preview and third-party notices remain publication-ready", async
     text("README.md"), text("THIRD_PARTY_NOTICES.md"), text("LICENSES/Apache-2.0.txt"),
   ])
   const changelog = await text("CHANGELOG.md")
-  assert.match(changelog, /^## \[Unreleased\]\n\n## \[1\.1\.10\] - 2026-10-19\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.9\] - 2026-10-13\n\n### Changed\n[\s\S]*?\n\n## \[1\.1\.8\] - 2026-10-10\n\n### Security\n[\s\S]*?\n\n## \[1\.1\.7\] - 2026-10-09$/m)
+  assert.match(changelog, /^## \[Unreleased\]\n\n## \[1\.1\.11\] - 2026-10-23\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.10\] - 2026-10-19\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.9\] - 2026-10-13\n\n### Changed\n[\s\S]*?\n\n## \[1\.1\.8\] - 2026-10-10\n\n### Security\n[\s\S]*?\n\n## \[1\.1\.7\] - 2026-10-09$/m)
   assert.match(readme, /^## Requirements$/m)
   assert.match(readme, /^## Removal$/m)
   assert.match(readme, /^## Pandora stream recovery$/m)

@@ -68,17 +68,18 @@ Item {
         borderSpec: Border.controlSpec("normal", root.bar.foreground, Color.accent)
 
         Image {
+          id: artwork
           anchors.fill: parent
           anchors.margins: Style.space(2)
           fillMode: Image.PreserveAspectCrop
           asynchronous: true
           source: root.imageUrl
-          visible: source !== ""
+          visible: source !== "" && status !== Image.Error
         }
 
         Text {
           anchors.centerIn: parent
-          visible: !root.imageUrl
+          visible: !root.imageUrl || artwork.status === Image.Error
           text: "󰝚"
           color: root.bar.foreground
           font.family: root.bar.fontFamily

@@ -12,7 +12,7 @@ import "ConfigSchema.js" as ConfigSchema
 //
 // Transport is HTTP: each call is one curl run (see MaRequest.qml and
 // MaApi.js); state is polled every pollIntervalMs as
-// players/all -> player_queues/get -> player_queues/items.
+// players/all -> player_queues/get_active_queue -> player_queues/items.
 Item {
   id: root
 
@@ -41,15 +41,23 @@ Item {
   // Replaced wholesale on each poll; the *Revision counters let bindings
   // that call functions re-evaluate.
 
+  property int connectionGeneration: 0
   property bool connected: false
   property string lastError: ""
   property int revision: 0
 
   property var players: []
   property string activePlayerId: ""
+  property int selectionGeneration: 0
+  onActivePlayerIdChanged: {
+    root.selectionGeneration++
+    root.healInProgress = false
+    root.healRetry = false
+    root.applyQueueInfo(null)
+  }
 
   // The active player's queue: items from player_queues/items, and the
-  // queue object from player_queues/get, which owns the current index,
+  // queue object from player_queues/get_active_queue, which owns the current index,
   // shuffle/repeat/crossfade/autoplay and the elapsed time.
   property var queue: []
   property int queueRevision: 0
@@ -171,6 +179,7 @@ Item {
       root.configError = "config.json missing or unreadable"
       root.config = ({})
       root.ready = false
+      root.stopConnection()
       // A fresh install has no config.json yet; the watcher does not see a
       // file that appears later, so keep retrying until it loads.
       configRetry.start()
@@ -504,6 +513,7 @@ Item {
 
   function applyConfig(text) {
     var result = ConfigSchema.parse(text)
+    if (JSON.stringify(root.config) !== JSON.stringify(result.config)) root.invalidateConnection()
     root.config = result.config
     root.configPresent = result.present || ({})
     root.preferredPlayerId = result.config.preferredPlayerId || ""
@@ -542,10 +552,50 @@ Item {
   }
 
   function stopConnection() {
+    root.invalidateConnection()
     pollTimer.stop()
     root.pollingActive = false
+    root.selectionGeneration++
+    root.applyQueueInfo(null)
     root.connected = false
     root.pollInFlight = false
+  }
+
+  // All asynchronous work belongs to the connection that created it. Running
+  // processes may finish, but cannot update state, recover providers or retry.
+  function invalidateConnection() {
+    root.connectionGeneration++
+    root.pendingActions = []
+    root.currentAction = null
+    root.pendingVolumes = ({})
+    root.healInProgress = false
+    root.healRetry = false
+    root.pollInFlight = false
+    root.connected = false
+    root.applyQueueInfo(null)
+    var requests = [playersRequest, queueInfoRequest, queueRequest, queueActionRequest,
+      healLookup, healQueues, searchRequest, favoritesRequest, playlistsRequest,
+      recentRequest, browseRequest, drillRequest]
+    for (var i = 0; i < requests.length; i++) requests[i].clearPending()
+    root.searchResults = null
+    root.favorites = ({ tracks: [], albums: [], artists: [], playlists: [], radio: [] })
+    root.playlists = []
+    root.recentItems = []
+    root.browseItems = []
+    root.browseLoading = false
+    root.drillItems = []
+    root.drillItem = null
+    root.drillLoading = false
+    root.players = []
+  }
+
+  function connectionContextCurrent(ctx) {
+    return root.ready && !!ctx && ctx.connectionGeneration === root.connectionGeneration
+  }
+
+  function sendRequest(request, payload, ctx) {
+    if (!root.ready) return false
+    return request.send(payload, Object.assign({}, ctx || {}, { connectionGeneration: root.connectionGeneration }))
   }
 
   function refreshState() {
@@ -560,52 +610,86 @@ Item {
   }
 
   // Poll step 1 of 3.
+  property int playersPollSequence: 0
+
   function runFetchPlayers() {
-    if (!root.ready || !playersRequest.send(root.api("players/all", {}, "poll-players"))) root.pollInFlight = false
+    root.playersPollSequence++
+    if (!root.ready || !root.sendRequest(playersRequest, root.api("players/all", {}, "poll-players"), { pollSequence: root.playersPollSequence, generation: root.selectionGeneration })) root.pollInFlight = false
   }
 
   MaRequest {
     id: playersRequest
+    connectionGeneration: root.connectionGeneration
     label: "players"
-    onResult: function(data) {
+    onResult: function(data, ctx) {
+      if (!root.connectionContextCurrent(ctx)) return
+      if (ctx.generation !== root.selectionGeneration) { root.pollInFlight = false; root.refreshState(); return }
       // players/all is the connection health check. Do not continue the poll
       // with stale players after a timeout, invalid JSON or JSON-RPC error:
       // connected=false also makes contextual media keys fall back locally.
-      if (!root.applyPlayers(data)) {
+      if (!root.applyPlayers(data, ctx)) {
         root.pollInFlight = false
         return
       }
       var chosen = MaApi.pickActivePlayerId(root.players, root.preferredPlayerId)
       if (chosen && chosen !== root.activePlayerId) root.activePlayerId = chosen
       // Step 2 of 3.
-      if (!root.activePlayerId || !queueInfoRequest.send(root.api("player_queues/get", { queue_id: root.activePlayerId }, "poll-queue-info")))
+      if (!root.activePlayerId || !root.sendRequest(queueInfoRequest, root.api("player_queues/get_active_queue", { player_id: root.activePlayerId }, "poll-queue-info"), { playerId: root.activePlayerId, generation: root.selectionGeneration }))
         root.pollInFlight = false
     }
   }
 
   MaRequest {
     id: queueInfoRequest
+    connectionGeneration: root.connectionGeneration
     label: "queue info"
-    onResult: function(data) {
+    onResult: function(data, ctx) {
+      if (!root.connectionContextCurrent(ctx)) return
+      if (!root.queueContextCurrent(ctx)) { root.finishQueuePoll(ctx); return }
       root.applyQueueInfo(data)
-      // Step 3 of 3.
-      if (!root.activePlayerId || !queueRequest.send(root.api("player_queues/items", { queue_id: root.activePlayerId, limit: 200, offset: 0 }, "poll-queue")))
-        root.pollInFlight = false
+      // No active MA queue (for example, a device's external source).
+      if (!root.queueInfo || !root.sendRequest(queueRequest, root.api("player_queues/items", { queue_id: root.queueInfo.queue_id, limit: 200, offset: 0 }, "poll-queue"), ctx))
+        root.finishQueuePoll(ctx)
     }
   }
 
   MaRequest {
     id: queueRequest
+    connectionGeneration: root.connectionGeneration
     label: "queue"
-    onResult: function(data) {
-      root.applyQueue(data)
-      root.pollInFlight = false
+    onResult: function(data, ctx) {
+      if (!root.connectionContextCurrent(ctx)) return
+      if (root.queueContextCurrent(ctx)) root.applyQueue(data)
+      root.finishQueuePoll(ctx)
     }
+  }
+
+  function queueContextCurrent(ctx) {
+    return root.connectionContextCurrent(ctx) && ctx.generation === root.selectionGeneration && ctx.playerId === root.activePlayerId
+  }
+
+  function finishQueuePoll(ctx) {
+    if (!root.connectionContextCurrent(ctx)) return
+    root.pollInFlight = false
+    if (!root.queueContextCurrent(ctx)) root.refreshState()
   }
 
   function applyQueueInfo(q) {
     if (!q || typeof q !== "object" || !q.queue_id) {
       root.queueInfo = null
+      root.queue = []
+      root.queueRevision++
+      root.queuePosition = 0
+      root.queueState = "idle"
+      root.shuffleEnabled = false
+      root.repeatMode = "off"
+      root.crossfadeEnabled = false
+      root.autoplayEnabled = false
+      root.dontStopTheMusicEnabled = false
+      root.queueDynamic = false
+      root.currentFavorite = false
+      root.queueElapsedBase = 0
+      root.queueElapsedAtMs = 0
       return
     }
     var cur = q.current_item && typeof q.current_item === "object" ? q.current_item : null
@@ -643,7 +727,7 @@ Item {
   }
 
   // Player records keep only what the popup and the IPC surface read.
-  function applyPlayers(list) {
+  function applyPlayers(list, ctx) {
     if (!Array.isArray(list)) {
       root.connected = false
       root.lastError = list === null ? "players: no valid reply" : "players/all returned non-list"
@@ -670,6 +754,15 @@ Item {
         sleep_timer_expires_at: typeof p.sleep_timer_expires_at === "number" ? p.sleep_timer_expires_at : 0
       }
     })
+    for (var i = 0; i < bounded.length; i++) {
+      var p = bounded[i]
+      var pending = root.pendingVolumes[p.player_id]
+      if (!pending) continue
+      // Only a poll started after the latest action completed can reconcile it.
+      if (Date.now() >= pending.expiresAt || (pending.afterPoll !== null && ctx && ctx.pollSequence > pending.afterPoll))
+        delete root.pendingVolumes[p.player_id]
+      else p[pending.field] = pending.target
+    }
     root.players = bounded
     root.revision = root.revision + 1
     root.connected = true
@@ -732,35 +825,72 @@ Item {
   // (e.g. a volume change right behind an unmute, or held volume keys).
   property var pendingActions: []
 
-  function runAction(command, args, onDone) {
+  property var currentAction: null
+  property int actionSequence: 0
+
+  function runAction(command, args, onDone, playerId, selectionBound) {
     if (!root.ready) return
-    if (actionProc.running) {
-      // A new play-now pick (option "replace") supersedes older pending media
-      // picks: replaying every click while the server was slow wedged a Sonos
-      // session. Enqueue actions ("next" and "add") must not coalesce, because
-      // each represents a distinct item the user asked to keep in the queue.
-      if (MaApi.isQueueReplacingPlay(command, args))
-        root.pendingActions = MaApi.withoutQueueReplacingPlays(root.pendingActions)
-      if (root.pendingActions.length < 20)
-        root.pendingActions.push({ command: command, args: args, onDone: onDone })
+    // Coalesce only pending replacements and absolute levels for the same
+    // player. Distinct enqueues and callbacks on retained actions stay ordered.
+    if (MaApi.isQueueReplacingPlay(command, args))
+      root.pendingActions = MaApi.withoutQueueReplacingPlays(root.pendingActions)
+    if (command === "players/cmd/volume_set" || command === "players/cmd/group_volume")
+      root.pendingActions = root.pendingActions.filter(function(a) {
+        return a.command !== command || a.args.player_id !== args.player_id
+      })
+    if (root.pendingActions.length >= 20) return
+    root.pendingActions.push({ command: command, args: Object.assign({}, args || {}), onDone: onDone || null,
+      selectionBound: !!selectionBound, playerId: playerId || "", generation: root.selectionGeneration,
+      connectionGeneration: root.connectionGeneration, actionId: ++root.actionSequence })
+    root.runNextAction()
+  }
+
+  function actionContextCurrent(action) {
+    return root.connectionContextCurrent(action) && (!(action.playerId || action.selectionBound) || action.generation === root.selectionGeneration)
+  }
+
+  function runNextAction() {
+    if (root.currentAction || actionProc.running) return
+    while (root.pendingActions.length > 0) {
+      var action = root.pendingActions.shift()
+      if (!root.actionContextCurrent(action)) continue
+      root.currentAction = action
+      if (action.playerId) {
+        if (!root.sendRequest(queueActionRequest, root.api("player_queues/get_active_queue", { player_id: action.playerId }, "action-queue"), action))
+          root.finishAction(-1, 0, "")
+      } else root.dispatchAction(action)
       return
     }
+  }
+
+  function dispatchAction(action) {
+    if (!root.actionContextCurrent(action)) { root.finishAction(-1, 0, ""); return }
+    var command = action.command
+    var args = action.args
     var payload = MaApi.buildActionArgs(root.config.url, root.config.token, command, args, undefined,
       MaApi.isPlayCommand(command) ? "25" : "8")
     actionProc.authToken = payload.token || ""
     actionProc.requestBody = payload.body || ""
     actionProc.command = [Quickshell.env("SHELL") || "/bin/bash", "-c", payload.script]
-    actionProc.onFinished = onDone || null
+    actionProc.actionContext = action
     actionProc.actionCommand = command
     actionProc.actionArgs = args || null
+    actionProc.httpCode = ""
     actionProc.running = true
+  }
+
+  function finishAction(code, status, httpCode) {
+    var action = root.currentAction
+    if (root.actionContextCurrent(action) && typeof action.onDone === "function") action.onDone(code, status, httpCode)
+    root.currentAction = null
+    Qt.callLater(function() { root.runNextAction() })
   }
 
   Process {
     id: actionProc
     property string authToken: ""
     property string requestBody: ""
-    property var onFinished: null
+    property var actionContext: null
     property string actionCommand: ""
     property var actionArgs: null
     stdinEnabled: true
@@ -779,22 +909,21 @@ Item {
         var parts = String(text || "").trim().split(/\s+/)
         actionProc.httpCode = parts[0] || ""
         var elapsed = parts.length > 1 ? parseFloat(parts[1]) : 0
-        root.reportActionStatus(actionProc.actionCommand, actionProc.httpCode, elapsed, actionProc.actionArgs)
+        if (root.actionContextCurrent(actionProc.actionContext)) root.reportActionStatus(actionProc.actionCommand, actionProc.httpCode, elapsed, actionProc.actionArgs, actionProc.actionContext)
       }
     }
     onExited: function(code, status) {
-      // curl exit 28 = timed out. play_media keeps going on the server
-      // (SiriusXM streams take ~20 s to start), so say so instead of failing.
-      if (code === 28 && actionCommand === "player_queues/play_media")
-        root.showOsd("Music Assistant", "media-play", "Starting… some stations take up to 20 seconds")
-      else if (code !== 0)
-        root.showOsd("Music Assistant", "dialog-warning", "Music Assistant didn't respond")
-      if (typeof onFinished === "function") onFinished(code, status, httpCode)
-      // Start the next waiting action (see pendingActions) once this Process
-      // has exited; starting it from here keeps them in the order sent.
-      if (root.pendingActions.length > 0) {
-        var next = root.pendingActions.shift()
-        Qt.callLater(function() { root.runAction(next.command, next.args, next.onDone) })
+      if (root.actionContextCurrent(actionContext)) {
+        if (code === 28 && actionCommand === "player_queues/play_media")
+          root.showOsd("Music Assistant", "media-play", "Starting… some stations take up to 20 seconds")
+        else if (code !== 0)
+          root.showOsd("Music Assistant", "dialog-warning", "Music Assistant didn't respond")
+        root.finishAction(code, status, httpCode)
+      } else {
+        // An old process must not complete or clear a newer connection's work.
+        if (root.currentAction && actionContext && root.currentAction.actionId === actionContext.actionId)
+          root.currentAction = null
+        Qt.callLater(function() { root.runNextAction() })
       }
       // schedule a quick refresh so UI picks up the new state
       if (refreshTimer) refreshTimer.restart()
@@ -804,13 +933,13 @@ Item {
   // Actions print only the HTTP status. Anything but 200 means Music Assistant
   // rejected the command (e.g. a provider that is signed out cannot play its
   // stations); tell the user instead of silently doing nothing.
-  function reportActionStatus(command, httpCode, elapsedSec, args) {
+  function reportActionStatus(command, httpCode, elapsedSec, args, actionContext) {
     if (!httpCode || httpCode === "200" || httpCode === "000") return
     console.warn("[music-assistant] " + command + " -> HTTP " + httpCode + " after " + (elapsedSec || 0).toFixed(1) + "s")
     // A play that fails only after the server's 15 s wait is a stuck stream
     // slot, not a bad pick: reset the provider and retry (see tryStreamSlotHeal).
     if (httpCode === "500" && MaApi.isPlayCommand(command) && (elapsedSec || 0) >= 12
-        && root.tryStreamSlotHeal(command, args))
+        && root.tryStreamSlotHeal(command, args, actionContext))
       return
     var isPlay = command === "player_queues/play_media"
     var what = isPlay ? "Couldn't play that" : "Command failed (" + command.split("/").pop() + ")"
@@ -831,23 +960,31 @@ Item {
   property bool healRetry: false
   property double lastHealAt: 0
 
-  function tryStreamSlotHeal(command, args) {
+  function tryStreamSlotHeal(command, args, actionContext) {
+    if (actionContext && (!root.connectionContextCurrent(actionContext) || actionContext.generation !== root.selectionGeneration)) return false
     if (root.healInProgress || root.healRetry) return false
     if (Date.now() - root.lastHealAt < 60000) return false
+    var targetPlayerId = args && args.player_id ? String(args.player_id) : ""
+    var targetPlayer = targetPlayerId && targetPlayerId !== root.activePlayerId ? root.playerById(targetPlayerId) : null
+    // An explicit transport target must not borrow the selected room's item.
     var uri = command === "player_queues/play_media" && args ? args.media
-      : (root.queueInfo && root.queueInfo.current_item ? root.queueInfo.current_item.uri
-        : (root.activeMedia ? root.activeMedia.uri : ""))
+      : targetPlayerId && targetPlayerId !== root.activePlayerId
+        ? (targetPlayer && targetPlayer.current_media ? targetPlayer.current_media.uri : "")
+        : (root.queueInfo && root.queueInfo.current_item ? root.queueInfo.current_item.uri
+          : (root.activeMedia ? root.activeMedia.uri : ""))
     if (!uri) return false
     root.healInProgress = true
     root.lastHealAt = Date.now()
-    healLookup.send(root.api("music/item_by_uri", { uri: uri }, "heal-lookup"), { command: command, args: args })
+    root.sendRequest(healLookup, root.api("music/item_by_uri", { uri: uri }, "heal-lookup"), { command: command, args: args, generation: root.selectionGeneration })
     return true
   }
 
   MaRequest {
     id: healLookup
+    connectionGeneration: root.connectionGeneration
     label: "heal lookup"
     onResult: function(data, ctx) {
+      if (!root.connectionContextCurrent(ctx) || ctx.generation !== root.selectionGeneration) return
       // Never generalise a slow HTTP 500 into permission to reload an arbitrary
       // provider. This recovery signature is confirmed only for Pandora.
       var provider = MaApi.pandoraProvider(data)
@@ -859,7 +996,8 @@ Item {
       // Before resetting, make sure the slot is not in honest use: Pandora really
       // does allow one stream per account, and a reload would cut off a room
       // that is genuinely playing it.
-      healQueues.send(root.api("player_queues/all", {}, "heal-queues"), {
+      root.sendRequest(healQueues, root.api("player_queues/all", {}, "heal-queues"), {
+        generation: ctx.generation,
         command: ctx.command,
         args: ctx.args,
         instance: provider.instance,
@@ -871,8 +1009,10 @@ Item {
 
   MaRequest {
     id: healQueues
+    connectionGeneration: root.connectionGeneration
     label: "heal queues"
     onResult: function(data, ctx) {
+      if (!root.connectionContextCurrent(ctx) || ctx.generation !== root.selectionGeneration) return
       // The absence of queue evidence is not proof that Pandora's one stream is
       // free. Fail closed if the check timed out, returned malformed JSON, or a
       // playing room lacks enough provider metadata to classify safely.
@@ -882,7 +1022,8 @@ Item {
         root.showOsd("Music Assistant", "dialog-warning", "Couldn't verify Pandora use — not resetting it")
         return
       }
-      var target = ctx.args && ctx.args.queue_id ? String(ctx.args.queue_id) : root.activePlayerId
+      var target = ctx.args && (ctx.args.queue_id || ctx.args.player_id)
+        ? String(ctx.args.queue_id || ctx.args.player_id) : root.activePlayerId
       var busyRoom = ""
       var unknownRoom = ""
       for (var i = 0; i < data.length; i++) {
@@ -912,6 +1053,7 @@ Item {
       console.warn("[music-assistant] stream slot stuck; reloading provider " + ctx.instance + " and retrying " + ctx.command)
       root.showOsd("Music Assistant", "view-refresh", ctx.name + " stream was stuck — resetting and retrying")
       root.runAction("config/providers/reload", { instance_id: ctx.instance }, function(code, status, http) {
+        if (!root.connectionContextCurrent(ctx) || ctx.generation !== root.selectionGeneration) return
         root.healInProgress = false
         if (code !== 0 || (http && http !== "200")) {
           root.showOsd("Music Assistant", "dialog-warning", "Couldn't reset " + ctx.name + " — restart Music Assistant")
@@ -919,8 +1061,8 @@ Item {
         }
         // One retry. If it fails again the normal warning shows (healRetry blocks a loop).
         root.healRetry = true
-        root.runAction(ctx.command, ctx.args, function() { root.healRetry = false })
-      })
+        root.runAction(ctx.command, ctx.args, function() { root.healRetry = false }, "", true)
+      }, "", true)
     }
   }
 
@@ -931,13 +1073,28 @@ Item {
     onTriggered: root.refreshState()
   }
 
-  // player_queues/* commands address the queue, whose id is the player's.
-  // players/cmd/* commands take player_id instead and call runAction() directly.
-  function actionForPlayer(playerId, command, args) {
+  // Queue ownership resolution occupies the same scheduler slot as execution.
+  function actionForPlayer(playerId, command, args, onDone) {
     var pid = playerId || root.activePlayerId
-    var a = args ? Object.assign({}, args) : {}
-    a.queue_id = pid
-    root.runAction(command, a)
+    if (pid) root.runAction(command, args, onDone, pid)
+  }
+
+  MaRequest {
+    id: queueActionRequest
+    connectionGeneration: root.connectionGeneration
+    label: "action queue"
+    onResult: function(data, ctx) {
+      if (!root.connectionContextCurrent(ctx)) return
+      var action = root.currentAction
+      if (!action || action.actionId !== ctx.actionId) return
+      if (!root.actionContextCurrent(action)) { root.finishAction(-1, 0, ""); return }
+      var qid = data && typeof data.queue_id === "string" ? data.queue_id : ""
+      if (!qid) { root.finishAction(-1, 0, ""); return }
+      if (action.command === "player_queues/transfer") action.args.source_queue_id = qid
+      else action.args.queue_id = qid
+      root.dispatchAction(action)
+      if (action.command === "player_queues/transfer") root.activatePlayer(action.args.target_queue_id)
+    }
   }
 
   function playPause(playerId) {
@@ -952,7 +1109,7 @@ Item {
     var p = root.playerById(pid)
     if (!p) return
     var playing = MaApi.isPlaying(p)
-    root.actionForPlayer(pid, playing ? "player_queues/pause" : "player_queues/play")
+    root.runAction(playing ? "players/cmd/pause" : "players/cmd/play", { player_id: pid })
     root.showOsd(playing ? "Pause" : "Play", playing ? "media-pause" : "media-play",
       MaApi.trackTitle(p.current_media) || "Music Assistant")
   }
@@ -962,7 +1119,7 @@ Item {
       if (root.activeMprisPlayer.canGoNext) root.activeMprisPlayer.next()
       return
     }
-    root.actionForPlayer(playerId, "player_queues/next")
+    root.runAction("players/cmd/next", { player_id: playerId || root.activePlayerId })
     root.showOsd("Next", "media-next", root.activeTitle)
   }
 
@@ -971,28 +1128,31 @@ Item {
       if (root.activeMprisPlayer.canGoPrevious) root.activeMprisPlayer.previous()
       return
     }
-    root.actionForPlayer(playerId, "player_queues/previous")
+    root.runAction("players/cmd/previous", { player_id: playerId || root.activePlayerId })
     root.showOsd("Previous", "media-previous", root.activeTitle)
   }
 
   function play(playerId) {
-    root.actionForPlayer(playerId, "player_queues/play")
+    root.runAction("players/cmd/play", { player_id: playerId || root.activePlayerId })
   }
 
   function pause(playerId) {
-    root.actionForPlayer(playerId, "player_queues/pause")
+    root.runAction("players/cmd/pause", { player_id: playerId || root.activePlayerId })
   }
 
-  function setVolume(playerId, volumePercent) {
+  property var pendingVolumes: ({})
+  property int volumeSequence: 0
+
+  function setVolume(playerId, volumePercent, onDone) {
     var pid = playerId || root.activePlayerId
     var v = Math.max(0, Math.min(100, Math.round(volumePercent)))
     var p = root.playerById(pid)
     if (p && p.group_members && p.group_members.length > 0) {
       // A group leader: move the whole group, like the Music Assistant UI.
-      root.runAction("players/cmd/group_volume", { player_id: pid, volume_level: v })
+      root.runAction("players/cmd/group_volume", { player_id: pid, volume_level: v }, onDone)
       return
     }
-    root.runAction("players/cmd/volume_set", { player_id: pid, volume_level: v })
+    root.runAction("players/cmd/volume_set", { player_id: pid, volume_level: v }, onDone)
   }
 
   function adjustVolume(playerId, delta) {
@@ -1019,9 +1179,16 @@ Item {
     if (!p) return
     var target = Math.max(0, Math.min(100, Math.round(volumePercent)))
     if (p.volume_muted) root.setMutedLocal(pid, false)
-    p.volume_level = target
+    if (p.group_members && p.group_members.length > 0) p.group_volume = target
+    else p.volume_level = target
     root.players = root.players.slice()
-    root.setVolume(pid, target)
+    var sequence = ++root.volumeSequence
+    root.pendingVolumes[pid] = { target: target, field: p.group_members && p.group_members.length > 0 ? "group_volume" : "volume_level",
+      sequence: sequence, expiresAt: Date.now() + 10000, afterPoll: null }
+    root.setVolume(pid, target, function(code, status, httpCode) {
+      var pending = root.pendingVolumes[pid]
+      if (pending && pending.sequence === sequence) pending.afterPoll = root.playersPollSequence
+    })
   }
 
   function setMuted(playerId, muted) {
@@ -1062,17 +1229,17 @@ Item {
 
   // Move the current queue to another player and make that one active.
   function transferQueue(sourceId, targetId) {
-    root.runAction("player_queues/transfer", {
-      source_queue_id: sourceId || root.activePlayerId,
+    if (!targetId) return
+    root.actionForPlayer(sourceId, "player_queues/transfer", {
       target_queue_id: targetId,
       auto_play: true
     })
-    root.activatePlayer(targetId)
   }
 
   function playUri(playerId, uri) {
     if (!uri) return
-    root.actionForPlayer(playerId, "player_queues/play_media", {
+    root.runAction("player_queues/play_media", {
+      queue_id: playerId || root.activePlayerId,
       media: uri,
       // "replace" clears the queue first. "play" inserts at the current spot and
       // keeps the rest, so after the pick ends the queue resumes whatever was
@@ -1105,7 +1272,7 @@ Item {
     root.searchResults = null
     // Uncached searches across every provider can take 10 s; allow 30. The
     // request component retains the latest search if another is already busy.
-    searchRequest.send(root.api("music/search", {
+    root.sendRequest(searchRequest, root.api("music/search", {
       search_query: query,
       limit: root.config.searchLimit || 20,
       media_types: ["track", "album", "artist", "playlist", "radio", "podcast", "audiobook"]
@@ -1127,8 +1294,10 @@ Item {
 
   MaRequest {
     id: searchRequest
+    connectionGeneration: root.connectionGeneration
     label: "search"
     onResult: function(data, ctx) {
+      if (!root.connectionContextCurrent(ctx)) return
       if (!ctx || ctx.generation !== root.searchGeneration || ctx.query !== root.searchQuery) return
       if (!data || typeof data !== "object") return
       root.searchResults = {
@@ -1157,14 +1326,16 @@ Item {
     if (index >= root.favoriteTypes.length) return
     var type = root.favoriteTypes[index]
     var controller = type === "radio" ? "radios" : type
-    favoritesRequest.send(root.api("music/" + controller + "/library_items", { limit: 50, favorite: true }, "fav-" + type),
+    root.sendRequest(favoritesRequest, root.api("music/" + controller + "/library_items", { limit: 50, favorite: true }, "fav-" + type),
       { type: type, index: index })
   }
 
   MaRequest {
     id: favoritesRequest
+    connectionGeneration: root.connectionGeneration
     label: "favorites"
     onResult: function(data, ctx) {
+      if (!root.connectionContextCurrent(ctx)) return
       var next = Object.assign({}, root.favorites)
       next[ctx.type] = root.mapItems(data, MaApi.MAX_FAVORITES_PER_TYPE)
       root.favorites = next
@@ -1175,13 +1346,15 @@ Item {
 
   function refreshPlaylists() {
     if (!root.ready) return
-    playlistsRequest.send(root.api("music/playlists/library_items", { limit: 100 }, "playlists"))
+    root.sendRequest(playlistsRequest, root.api("music/playlists/library_items", { limit: 100 }, "playlists"))
   }
 
   MaRequest {
     id: playlistsRequest
+    connectionGeneration: root.connectionGeneration
     label: "playlists"
-    onResult: function(data) {
+    onResult: function(data, ctx) {
+      if (!root.connectionContextCurrent(ctx)) return
       root.playlists = root.mapItems(data, MaApi.MAX_PLAYLISTS)
       root.playlistsRevision = root.playlistsRevision + 1
     }
@@ -1189,13 +1362,15 @@ Item {
 
   function refreshRecent() {
     if (!root.ready) return
-    recentRequest.send(root.api("music/recently_played_items", { limit: root.config.recentLimit || 50 }, "recent"))
+    root.sendRequest(recentRequest, root.api("music/recently_played_items", { limit: root.config.recentLimit || 50 }, "recent"))
   }
 
   MaRequest {
     id: recentRequest
+    connectionGeneration: root.connectionGeneration
     label: "recent"
-    onResult: function(data) {
+    onResult: function(data, ctx) {
+      if (!root.connectionContextCurrent(ctx)) return
       root.recentItems = MaApi.boundedArray(Array.isArray(data) ? data : [], MaApi.MAX_RECENT_ITEMS).map(function(it) {
         var m = MaApi.mapMediaItem(it, root.config.url)
         if (m) m.last_played = typeof it.last_played === "number" ? it.last_played : null
@@ -1205,12 +1380,12 @@ Item {
     }
   }
 
-  // Seconds; player_queues/seek takes `position` in seconds.
+  // Seconds; players/cmd/seek takes `position` in seconds.
   function seek(playerId, positionSeconds) {
     var pid = playerId || root.activePlayerId
     if (!pid) return
     var p = Math.max(0, Math.round(positionSeconds))
-    root.actionForPlayer(pid, "player_queues/seek", { position: p })
+    root.runAction("players/cmd/seek", { player_id: pid, position: p })
     root.queueElapsedBase = p
     root.queueElapsedAtMs = Date.now()
   }
@@ -1286,7 +1461,7 @@ Item {
   // seconds later, so the list is refreshed twice after a successful reply.
   function saveQueueAsPlaylist(name) {
     if (!name || !root.queue || root.queue.length === 0) return
-    root.runAction("player_queues/save_as_playlist", { queue_id: root.activePlayerId, name: String(name) }, function(code, status, httpCode) {
+    root.actionForPlayer(root.activePlayerId, "player_queues/save_as_playlist", { name: String(name) }, function(code, status, httpCode) {
       if (httpCode !== "200") return
       root.showOsd("Saved", "playlist", "Queue saved as \"" + name + "\"")
       playlistsRefreshTimer.restart()
@@ -1307,7 +1482,7 @@ Item {
   // ------------------------------------------------------- queue options
 
   function stop(playerId) {
-    root.actionForPlayer(playerId, "player_queues/stop")
+    root.runAction("players/cmd/stop", { player_id: playerId || root.activePlayerId })
     root.showOsd("Stop", "media-stop", root.activeTitle || "Music Assistant")
   }
 
@@ -1432,7 +1607,7 @@ Item {
     root.browseGeneration = generation
     root.browseLoading = true
     var stack = Array.isArray(targetStack) ? targetStack.slice() : root.browseStack.slice()
-    browseRequest.send(root.api("music/browse", path ? { path: path } : {}, "browse-" + Date.now(), "30"),
+    root.sendRequest(browseRequest, root.api("music/browse", path ? { path: path } : {}, "browse-" + Date.now(), "30"),
       { path: path || "", name: name || "Music Assistant", stack: stack, generation: generation })
   }
 
@@ -1452,8 +1627,10 @@ Item {
 
   MaRequest {
     id: browseRequest
+    connectionGeneration: root.connectionGeneration
     label: "browse"
     onResult: function(data, ctx) {
+      if (!root.connectionContextCurrent(ctx)) return
       if (!ctx || ctx.generation !== root.browseGeneration) return
       var list = Array.isArray(data) ? data : []
       root.browseItems = root.mapItems(list.filter(function(it) {
@@ -1489,7 +1666,7 @@ Item {
     root.drillItem = item
     root.drillItems = []
     root.drillLoading = true
-    drillRequest.send(root.api(cmd, { item_id: item.item_id, provider_instance_id_or_domain: item.provider }, "drill-" + Date.now(), "30"),
+    root.sendRequest(drillRequest, root.api(cmd, { item_id: item.item_id, provider_instance_id_or_domain: item.provider }, "drill-" + Date.now(), "30"),
       { generation: generation })
     return true
   }
@@ -1504,8 +1681,10 @@ Item {
 
   MaRequest {
     id: drillRequest
+    connectionGeneration: root.connectionGeneration
     label: "collection"
     onResult: function(data, ctx) {
+      if (!root.connectionContextCurrent(ctx)) return
       if (!ctx || ctx.generation !== root.drillGeneration) return
       root.drillItems = root.mapItems(data, MaApi.MAX_QUEUE_ITEMS)
       root.drillRevision = root.drillRevision + 1
@@ -1540,6 +1719,7 @@ Item {
         lastError: root.lastError,
         configError: root.configError,
         activePlayerId: root.activePlayerId,
+        activeQueueId: root.queueInfo ? root.queueInfo.queue_id : "",
         activePlayerName: root.activePlayer ? root.activePlayer.name : "",
         isPlaying: root.isPlaying,
         title: root.activeTitle,

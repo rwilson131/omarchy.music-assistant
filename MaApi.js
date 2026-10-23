@@ -100,7 +100,8 @@ function buildArgs(url, token, command, args, messageId, maxTime) {
 // server's 15 s stream-slot wait can finish and report, instead of curl giving
 // up at 8 s and the plugin never learning why the play failed.
 var PLAY_COMMANDS = ["player_queues/play_media", "player_queues/play", "player_queues/resume",
-  "player_queues/play_index", "player_queues/next", "player_queues/previous"]
+  "player_queues/play_index", "player_queues/next", "player_queues/previous",
+  "players/cmd/play", "players/cmd/next", "players/cmd/previous"]
 function isPlayCommand(command) { return PLAY_COMMANDS.indexOf(command) !== -1 }
 
 // Only a play-now selection replaces the queue and may supersede older pending
@@ -358,11 +359,13 @@ function itemImageUrl(it, serverUrl) {
   if (!im || !im.path) return ""
   var path = String(im.path)
   if (/^https?:\/\//i.test(path)) return safeImageUrl(path, 2048)
-  if (!serverUrl) return ""
-  // The built-in provider's bundled images (logo.png) are not proxyable.
-  if (im.provider === "builtin") return ""
-  return safeImageUrl(serverUrl + "/imageproxy?path=" + encodeURIComponent(path)
-    + "&provider=" + encodeURIComponent(im.provider || "") + "&size=128", 2048)
+  // MA 2.10.7 serializes the opaque ID, including for builtin artwork.
+  // Do not reconstruct provider paths or attach the API bearer token.
+  if (typeof im.proxy_id !== "string" || !/^[a-f0-9]{64}$/i.test(im.proxy_id)) return ""
+  var base = typeof serverUrl === "string" ? serverUrl.replace(/\/+$/, "") : ""
+  if (!/^https?:\/\/[^/@?#\s\\]+(?:\/[^?#\s\\]*)?$/i.test(base)) return ""
+  // 160 is in the server's bounded thumbnail-size set; legacy 128 is not.
+  return safeImageUrl(base + "/imageproxy/" + im.proxy_id + "?size=160", 2048)
 }
 
 // "Artist — Album" style second line for a list row.

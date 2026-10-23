@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.11] - 2026-10-23
+
+### Fixed
+- Resolve the active queue through the Music Assistant API for grouped players, queue edits, saves and transfer sources. Keep explicit play-now and transfer destinations, serialize ownership lookups with transport actions, use player transport commands for source-aware playback controls, and ignore queue replies from a previous player selection.
+- Use serialized artwork proxy IDs with the canonical imageproxy route, including builtin artwork, while retaining direct HTTP(S) images. Show the artwork placeholder when image loading fails.
+- Accumulate optimistic group-volume adjustments against the displayed group level while preserving individual speaker levels and mute behavior. Ignore pre-command polls and reconcile with fresh polling after actions, including failures, with a bounded local override.
+- Invalidate asynchronous work when configuration or connections change, including running action callbacks and provider recovery.
+- Add synthetic request and actual Service-function regressions for stable Music Assistant 2.10.7, plus offscreen QML coverage for image loading failures.
+
 ## [1.1.10] - 2026-10-19
 
 ### Fixed

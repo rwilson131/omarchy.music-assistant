@@ -17,6 +17,11 @@ Process {
 
   // Free-form context handed back with the result, so one component can
   // serve a sequence of related calls (favorites per media type).
+  property int connectionGeneration: 0
+  property int requestGeneration: 0
+  property int pendingGeneration: 0
+  onConnectionGenerationChanged: clearPending()
+
   property var context: ({})
   property string authToken: ""
   property string requestBody: ""
@@ -30,16 +35,20 @@ Process {
   // nested lists). Keep parsed JSON in JS instead of weakening array validation.
   // Arguments: parsed reply (unwrapped, or null), then request context.
   property var onResult: null
+  // Distinguish a valid JSON null (no active queue) from a failed read.
+  property bool replyValid: false
 
   readonly property bool busy: running
 
   function send(payload, ctx) {
     if (!payload) return false
     if (running) {
+      request.pendingGeneration = request.connectionGeneration
       request.pendingPayload = payload
       request.pendingContext = ctx || ({})
       return true
     }
+    request.requestGeneration = request.connectionGeneration
     request.context = ctx || ({})
     request.authToken = payload.token || ""
     request.requestBody = payload.body || ""
@@ -66,13 +75,16 @@ Process {
     waitForEnd: true
     onStreamFinished: {
       var data = null
+      request.replyValid = false
       try {
-        var payload = JSON.parse(String(text || "null"))
+        var payload = JSON.parse(String(text || ""))
+        request.replyValid = true
         data = payload !== null && typeof payload === "object" && !Array.isArray(payload) && payload.result !== undefined
           ? payload.result : payload
       } catch (e) {
         console.warn("[music-assistant] " + request.label + ": reply is not JSON: " + e.message)
       }
+      if (request.requestGeneration !== request.connectionGeneration) return
       if (typeof request.onResult === "function") request.onResult(data, request.context)
     }
   }
@@ -81,7 +93,10 @@ Process {
     if (request.pendingPayload === null) return
     var payload = request.pendingPayload
     var ctx = request.pendingContext
+    var generation = request.pendingGeneration
     request.clearPending()
-    Qt.callLater(function() { request.send(payload, ctx) })
+    Qt.callLater(function() {
+      if (generation === request.connectionGeneration) request.send(payload, ctx)
+    })
   }
 }
