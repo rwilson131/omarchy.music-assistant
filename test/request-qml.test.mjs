@@ -11,6 +11,9 @@ async function isolatedEnvironment(dir) {
   const env = {...process.env, QT_QPA_PLATFORM:'offscreen', XDG_RUNTIME_DIR:runtime,
     XDG_CACHE_HOME:join(dir, 'cache'), XDG_STATE_HOME:join(dir, 'state'),
     DBUS_SESSION_BUS_ADDRESS:'unix:path=' + join(dir, 'no-session-bus')}
+  // A desktop session may export the gtk3 Qt platform theme. Loading it still
+  // asks GTK for a display even when Qt itself uses the offscreen backend.
+  delete env.QT_QPA_PLATFORMTHEME
   delete env.WAYLAND_DISPLAY
   delete env.DISPLAY
   return env
@@ -62,10 +65,46 @@ Scope {
   } finally {await rm(dir,{recursive:true,force:true})}
 })
 
+test("ProviderHealth maps auth failures without retaining setup data", {skip: !available}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ma-provider-health-test-"))
+  try {
+    for (const name of ["ProviderHealth.qml", "MaRequest.qml", "MaApi.js"])
+      await copyFile(new URL("../" + name, import.meta.url), join(dir, name))
+    await writeFile(join(dir, "shell.qml"), `import QtQuick
+import Quickshell
+Scope {
+ ProviderHealth {
+  id: health
+  Component.onCompleted: health.mapProviders([
+   {domain:"sonos",instance_id:"sonos",enabled:true,status:"loaded",default_name:"Sonos",values:{secret:"drop-me"}},
+   {domain:"apple_music",instance_id:"apple",enabled:true,status:"auth_required",default_name:"Apple Music",last_error:{message:"Login failed"}},
+   {domain:"smart_fades",instance_id:"smart",enabled:false,status:"disabled",default_name:"Smart Fades",last_error:{message:"Ignore"}}
+  ])
+ }
+ Timer {interval:25;running:true;onTriggered:{
+  if(health.providers.length!==3 || health.providers[0].values!==undefined) {console.log("FAIL_SANITIZE");Qt.quit();return;}
+  if(health.problems.length!==1 || health.problems[0].domain!=="apple_music") {console.log("FAIL_PROBLEMS");Qt.quit();return;}
+  if(health.summary!=="Apple Music: Sign-in required") {console.log("FAIL_SUMMARY:"+health.summary);Qt.quit();return;}
+  console.log("PASS_QML_PROVIDER_HEALTH");Qt.quit();
+ }}
+ Timer {interval:5000;running:true;onTriggered:{console.log("FAIL_TIMEOUT");Qt.quit();}}
+}`)
+    const env = await isolatedEnvironment(dir)
+    const result = spawnSync("quickshell", ["-p", dir], {env, encoding:"utf8", timeout:8000})
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout + result.stderr, /PASS_QML_PROVIDER_HEALTH/)
+    assert.doesNotMatch(result.stdout + result.stderr, /FAIL_|ERROR/)
+  } finally { await rm(dir, {recursive:true, force:true}) }
+})
+
 test("all MaRequest consumers use the JS callback rather than a var signal",async()=>{
- const service=await readFile(new URL("../Service.qml",import.meta.url),"utf8")
+ const [service, health]=await Promise.all([
+  readFile(new URL("../Service.qml",import.meta.url),"utf8"),
+  readFile(new URL("../ProviderHealth.qml",import.meta.url),"utf8")
+ ])
  assert.equal((service.match(/onResult: function\(data/g)||[]).length,12)
- assert.doesNotMatch(service,/onFinished: function\(data/)
+ assert.equal((health.match(/onResult: function\(data/g)||[]).length,1)
+ assert.doesNotMatch(service+health,/onFinished: function\(data/)
 })
 
 test("PlayerControls artwork fallback follows real QML Image.Error and recovery", {skip: !available}, async () => {

@@ -9,7 +9,7 @@ const schemaSource = (await readFile(new URL('../ConfigSchema.js', import.meta.u
 function serviceFixture() {
   const MaApi = vm.createContext({}), ConfigSchema = vm.createContext({})
   vm.runInContext(apiSource, MaApi); vm.runInContext(schemaSource, ConfigSchema)
-  const calls = [], requests = [], later = []
+  const calls = [], requests = [], later = [], osds = []
   let now = 100000
   const root = {players: [], activePlayerId: 'child', selectionGeneration: 0, connectionGeneration: 0,
     ready: true, connected: true, queue: [], queueInfo: null, queueRevision: 0, revision: 0,
@@ -39,7 +39,8 @@ function serviceFixture() {
   }
   // Only UI, disk persistence and periodic polling are isolated. Action queuing,
   // ownership resolution, payload construction and process completion stay real.
-  root.showOsd = root.persistConfig = root.refreshState = root.installMediaKeysBindings = noop
+  root.showOsd = (...args) => osds.push(args)
+  root.persistConfig = root.refreshState = root.installMediaKeysBindings = noop
   root.mprisRoutingEnabled = () => false
   const selectionChanged = vm.runInContext('(function(){' + service.match(/  onActivePlayerIdChanged: \{([\s\S]*?)\n  }/)[1] + '})', context)
   let selected = root.activePlayerId
@@ -60,7 +61,7 @@ function serviceFixture() {
     assert.equal(actionProc.running, true, 'an action must actually have started')
     actionProc.running = false; actionProc.httpCode = http; exit(code, 0); flush()
   }
-  return {root, calls, requests, reply, MaApi, context, complete, flush, actionProc, advance: ms => {now += ms}}
+  return {root, calls, requests, reply, MaApi, context, complete, flush, actionProc, osds, advance: ms => {now += ms}}
 }
 
 const group = () => [{player_id:'child', available:true, group_members:['speaker'], group_volume:40, volume_level:25},
@@ -262,6 +263,23 @@ test('late action status cannot attach provider recovery to a new selection', ()
   assert.equal(requests.length,0)
 })
 
+test('success feedback waits for the server response', () => {
+  const failed = serviceFixture()
+  failed.root.players = [{player_id:'child', playback_state:'idle', current_media:{name:'Synthetic'}}]
+  failed.root.playPause('child')
+  assert.equal(failed.osds.length, 0)
+  failed.complete(0, '500')
+  assert.equal(failed.osds.length, 0, 'a rejected command must not announce success')
+
+  const passed = serviceFixture()
+  passed.root.players = [{player_id:'child', playback_state:'idle', current_media:{name:'Synthetic'}}]
+  passed.root.playPause('child')
+  assert.equal(passed.osds.length, 0)
+  passed.complete(0, '200')
+  assert.equal(passed.osds.length, 1)
+  assert.equal(passed.osds[0][0], 'Play')
+})
+
 test('transport remains player-directed and serialized for external sources', () => {
   const {root, calls, complete} = serviceFixture()
   root.players = [{player_id:'child', playback_state:'playing'}]
@@ -303,6 +321,7 @@ test('slow player recovery uses its explicit target URI, retry and conservative 
     reply('healQueues', busy ? [{queue_id:'child',state:'playing',current_item:{streamdetails:{provider:'pandora-synthetic'}}}] : [], queues.ctx)
     if (busy) {
       assert.equal(calls.length, 1, 'a different playing room prevents provider reload')
+      assert.match(root.actionError, /already playing in/)
     } else {
       assert.equal(calls[1].command, 'config/providers/reload')
       complete()

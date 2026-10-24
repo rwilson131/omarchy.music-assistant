@@ -43,28 +43,6 @@ BarWidget {
   readonly property real maxLabelWidth: 180
   readonly property real popupWidth: 380
 
-  // Players tab order: active, playing, idle, groups, unavailable; hidden
-  // players stay hidden as in the MA UI.
-  function sortedPlayers() {
-    if (!service) return []
-    var _r = service.revision
-    var active = service.activePlayerId
-    var list = service.players.filter(function(p) { return !p.hide_in_ui })
-    function rank(p) {
-      if (p.player_id === active) return 0
-      if (!p.available) return 4
-      if (p.playback_state === "playing") return 1
-      if (p.type === "group") return 3
-      return 2
-    }
-    list.sort(function(a, b) {
-      var ra = rank(a), rb = rank(b)
-      if (ra !== rb) return ra - rb
-      return String(a.name).localeCompare(String(b.name))
-    })
-    return list
-  }
-
   function filteredBrowseItems() {
     if (!service) return []
     var _r = service.browseRevision
@@ -273,6 +251,7 @@ BarWidget {
     onOpenChanged: {
       if (open && root.service && typeof root.service.refreshState === "function") {
         root.service.refreshState()
+        root.service.refreshProviders()
       }
       if (open) Qt.callLater(function() {
         popupFocus.forceActiveFocus()
@@ -495,6 +474,11 @@ BarWidget {
                 }
               }
 
+              ProviderHealthBanner {
+                service: root.service
+                bar: root.bar
+              }
+
               // ------------------ Now section
               Column {
                 width: parent.width
@@ -576,175 +560,12 @@ BarWidget {
               }
 
               // ------------------ Players section
-              Column {
+              PlayersTab {
                 width: parent.width
-                spacing: Style.space(4)
                 visible: root.popupSection === "players"
-
-                PanelSectionHeader {
-                  foreground: root.bar.foreground
-                  text: "PLAYERS (" + (root.service ? root.service.players.length : 0) + ")"
-                }
-
-                Repeater {
-                  model: root.sortedPlayers()
-
-                  delegate: BorderSurface {
-                    id: playerRow
-                    required property var modelData
-                    readonly property var player: modelData
-                    readonly property bool isActive: root.service && player.player_id === root.service.activePlayerId
-                    readonly property bool available: player.available === true
-                    readonly property bool playingHere: player.playback_state === "playing"
-                    readonly property bool groupPlayer: player.group_members && player.group_members.length > 0
-                    readonly property string rowTitle: player.name + (groupPlayer ? " (" + player.group_members.length + ")" : "")
-                    readonly property string leaderName: {
-                      var lid = player.synced_to || player.active_group
-                      var l = lid && root.service ? root.service.playerById(lid) : null
-                      return l ? l.name : ""
-                    }
-                    readonly property string rowDetail: {
-                      if (!available) return "unavailable"
-                      if (leaderName !== "") return "grouped with " + leaderName
-                      var m = player.current_media
-                      if (!m) return "idle"
-                      return (m.artist ? m.artist + " — " : "") + (m.title || m.uri || "")
-                    }
-                    // Grouping relative to the active player.
-                    readonly property string groupMode: {
-                      if (!root.service || !available) return ""
-                      if (isActive) return groupPlayer ? "ungroup" : ""
-                      if (root.service.isGroupedWithActive(player.player_id)) return "leave"
-                      if (root.service.canGroupWithActive(player.player_id)) return "join"
-                      return ""
-                    }
-
-                    width: parent.width
-                    height: rowInner.implicitHeight + Style.space(10)
-                    radius: Style.spacing.labelGap
-                    color: isActive
-                      ? Style.selectedFillFor(root.bar.foreground, Color.accent)
-                      : "transparent"
-                    borderSpec: isActive
-                      ? Border.controlSpec("normal", root.bar.foreground, Color.accent)
-                      : Border.none()
-
-                    Row {
-                      id: rowInner
-                      anchors.left: parent.left
-                      anchors.right: parent.right
-                      anchors.verticalCenter: parent.verticalCenter
-                      anchors.leftMargin: playerRow.borderLeft + Style.space(8)
-                      anchors.rightMargin: playerRow.borderRight + Style.space(8)
-                      spacing: Style.space(8)
-
-                      Text {
-                        text: playingHere ? "󰏤" : (available ? "󰐊" : "󰂃")
-                        color: root.bar.foreground
-                        font.family: root.bar.fontFamily
-                        font.pixelSize: Style.font.body
-                        width: Style.space(18)
-                        horizontalAlignment: Text.AlignHCenter
-                        anchors.verticalCenter: parent.verticalCenter
-                        opacity: available ? 1.0 : 0.5
-                      }
-
-                      Column {
-                        width: parent.width - Style.space(34) - (groupBtn.visible ? groupBtn.width + Style.space(8) : 0) - (moveBtn.visible ? moveBtn.width + Style.space(8) : 0)
-                        spacing: Style.space(1)
-                        anchors.verticalCenter: parent.verticalCenter
-
-                        Text {
-                          text: playerRow.rowTitle
-                          color: root.bar.foreground
-                          font.family: root.bar.fontFamily
-                          font.pixelSize: Style.font.bodySmall
-                          font.bold: playerRow.isActive
-                          elide: Text.ElideRight
-                          width: parent.width
-                        }
-                        Text {
-                          text: playerRow.rowDetail
-                          color: Qt.darker(root.bar.foreground, 1.4)
-                          font.family: root.bar.fontFamily
-                          font.pixelSize: Style.font.caption
-                          elide: Text.ElideRight
-                          width: parent.width
-                          visible: text !== ""
-                        }
-                      }
-                    }
-
-                    MouseArea {
-                      anchors.fill: parent
-                      cursorShape: Qt.PointingHandCursor
-                      acceptedButtons: Qt.LeftButton | Qt.RightButton
-                      onClicked: function(mouse) {
-                        if (!root.service || !playerRow.available) return
-                        if (mouse.button === Qt.RightButton) {
-                          root.service.toggleMute(playerRow.player.player_id)
-                          return
-                        }
-                        // Selecting a player only changes which one the popup
-                        // controls; what is playing anywhere is left alone. Moving
-                        // the queue is the explicit "Move here" button.
-                        if (!playerRow.isActive) root.service.activatePlayer(playerRow.player.player_id)
-                      }
-                    }
-
-                    // Move the active player's queue to this one (stops it there).
-                    // Declared after the row's MouseArea so it receives the click.
-                    Button {
-                      id: moveBtn
-                      readonly property bool canMove: !playerRow.isActive && playerRow.available && root.service && root.service.queue.length > 0
-                      visible: canMove
-                      text: "Move here"
-                      tooltipText: "Move what " + (root.activePlayer ? root.activePlayer.name : "the active player") + " is playing to this player"
-                      foreground: root.bar.foreground
-                      fontSize: Style.font.caption
-                      bordered: true
-                      horizontalPadding: Style.space(6)
-                      verticalPadding: Style.space(2)
-                      anchors.right: groupBtn.visible ? groupBtn.left : parent.right
-                      anchors.rightMargin: groupBtn.visible ? Style.space(4) : playerRow.borderRight + Style.space(8)
-                      anchors.verticalCenter: parent.verticalCenter
-                      onClicked: if (root.service) root.service.transferQueue(root.service.activePlayerId, playerRow.player.player_id)
-                    }
-
-                    // Join / Leave / Ungroup. Declared after the row's MouseArea
-                    // so it receives the click.
-                    Button {
-                      id: groupBtn
-                      visible: playerRow.groupMode !== ""
-                      text: playerRow.groupMode === "join" ? "Join" : (playerRow.groupMode === "leave" ? "Leave" : "Ungroup")
-                      tooltipText: playerRow.groupMode === "join" ? "Group with " + (root.activePlayer ? root.activePlayer.name : "the active player")
-                        : (playerRow.groupMode === "leave" ? "Leave the group" : "Dissolve the group")
-                      foreground: root.bar.foreground
-                      fontSize: Style.font.caption
-                      bordered: true
-                      horizontalPadding: Style.space(6)
-                      verticalPadding: Style.space(2)
-                      anchors.right: parent.right
-                      anchors.rightMargin: playerRow.borderRight + Style.space(8)
-                      anchors.verticalCenter: parent.verticalCenter
-                      onClicked: {
-                        if (!root.service) return
-                        if (playerRow.groupMode === "join") root.service.groupAdd(playerRow.player.player_id)
-                        else if (playerRow.groupMode === "leave") root.service.groupRemove(playerRow.player.player_id)
-                        else root.service.ungroup(playerRow.player.player_id)
-                      }
-                    }
-                  }
-                }
-
-                Text {
-                  width: parent.width
-                  wrapMode: Text.WordWrap
-                  text: "Click a player to control it; nothing changes on the others. Move here carries the active player's queue over. Right-click mutes. Join / Leave group speakers with the active player."
-                  color: Qt.darker(root.bar.foreground, 1.5)
-                  font.family: root.bar.fontFamily
-                  font.pixelSize: Style.font.caption
-                }
+                service: root.service
+                bar: root.bar
+                activePlayer: root.activePlayer
               }
 
               // ------------------ Queue section

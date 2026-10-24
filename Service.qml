@@ -49,6 +49,21 @@ Item {
   property string actionError: ""
   property int revision: 0
 
+  ProviderHealth {
+    id: providerHealth
+    ready: root.ready
+    connectionGeneration: root.connectionGeneration
+    serverUrl: root.config && root.config.url ? root.config.url : ""
+    token: root.config && root.config.token ? root.config.token : ""
+  }
+  readonly property var providers: providerHealth.providers
+  readonly property var providerProblems: providerHealth.problems
+  readonly property string providerHealthSummary: providerHealth.summary
+
+  function refreshProviders() {
+    return providerHealth.refresh()
+  }
+
   property var players: []
   property string activePlayerId: ""
   property int selectionGeneration: 0
@@ -830,6 +845,10 @@ Item {
     root.actionError = ""
   }
 
+  function actionSucceeded(code, httpCode) {
+    return code === 0 && httpCode === "200"
+  }
+
   // ----------------------------------------------------------- action api
 
   // One action at a time goes through actionProc; setting running = true on a
@@ -1012,7 +1031,7 @@ Item {
       var provider = MaApi.pandoraProvider(data)
       if (!provider) {
         root.healInProgress = false
-        root.showOsd("Music Assistant", "dialog-warning", "Couldn't play that [500]")
+        root.reportActionFailure("Playback failed [HTTP 500]")
         return
       }
       // Before resetting, make sure the slot is not in honest use: Pandora really
@@ -1041,7 +1060,7 @@ Item {
       if (!Array.isArray(data)) {
         root.healInProgress = false
         console.warn("[music-assistant] could not verify Pandora queue use; not resetting")
-        root.showOsd("Music Assistant", "dialog-warning", "Couldn't verify Pandora use — not resetting it")
+        root.reportActionFailure("Couldn't verify Pandora use — not resetting it")
         return
       }
       var target = ctx.args && (ctx.args.queue_id || ctx.args.player_id)
@@ -1062,14 +1081,13 @@ Item {
         // Not a stuck slot: the one stream is in use elsewhere. Say so, change nothing.
         root.healInProgress = false
         console.warn("[music-assistant] " + ctx.name + " is already playing in " + busyRoom + "; not resetting")
-        root.showOsd("Music Assistant", "dialog-warning",
-          ctx.name + " is already playing in " + busyRoom + " — it allows one stream at a time")
+        root.reportActionFailure(ctx.name + " is already playing in " + busyRoom + " — it allows one stream at a time")
         return
       }
       if (unknownRoom) {
         root.healInProgress = false
         console.warn("[music-assistant] could not classify provider use in " + unknownRoom + "; not resetting Pandora")
-        root.showOsd("Music Assistant", "dialog-warning", "Couldn't verify Pandora use in " + unknownRoom + " — not resetting it")
+        root.reportActionFailure("Couldn't verify Pandora use in " + unknownRoom + " — not resetting it")
         return
       }
       console.warn("[music-assistant] stream slot stuck; reloading provider " + ctx.instance + " and retrying " + ctx.command)
@@ -1077,8 +1095,8 @@ Item {
       root.runAction("config/providers/reload", { instance_id: ctx.instance }, function(code, status, http) {
         if (!root.connectionContextCurrent(ctx) || ctx.generation !== root.selectionGeneration) return
         root.healInProgress = false
-        if (code !== 0 || (http && http !== "200")) {
-          root.showOsd("Music Assistant", "dialog-warning", "Couldn't reset " + ctx.name + " — restart Music Assistant")
+        if (!root.actionSucceeded(code, http)) {
+          root.reportActionFailure("Couldn't reset " + ctx.name + " — restart Music Assistant")
           return
         }
         // One retry. If it fails again the normal warning shows (healRetry blocks a loop).
@@ -1135,9 +1153,10 @@ Item {
     var p = root.playerById(pid)
     if (!p) return
     var playing = MaApi.isPlaying(p)
-    root.runAction(playing ? "players/cmd/pause" : "players/cmd/play", { player_id: pid })
-    root.showOsd(playing ? "Pause" : "Play", playing ? "media-pause" : "media-play",
-      MaApi.trackTitle(p.current_media) || "Music Assistant")
+    root.runAction(playing ? "players/cmd/pause" : "players/cmd/play", { player_id: pid }, function(code, status, http) {
+      if (root.actionSucceeded(code, http)) root.showOsd(playing ? "Pause" : "Play", playing ? "media-pause" : "media-play",
+        MaApi.trackTitle(p.current_media) || "Music Assistant")
+    })
   }
 
   function next(playerId) {
@@ -1145,8 +1164,9 @@ Item {
       if (root.activeMprisPlayer.canGoNext) root.activeMprisPlayer.next()
       return
     }
-    root.runAction("players/cmd/next", { player_id: playerId || root.activePlayerId })
-    root.showOsd("Next", "media-next", root.activeTitle)
+    root.runAction("players/cmd/next", { player_id: playerId || root.activePlayerId }, function(code, status, http) {
+      if (root.actionSucceeded(code, http)) root.showOsd("Next", "media-next", root.activeTitle)
+    })
   }
 
   function previous(playerId) {
@@ -1154,8 +1174,9 @@ Item {
       if (root.activeMprisPlayer.canGoPrevious) root.activeMprisPlayer.previous()
       return
     }
-    root.runAction("players/cmd/previous", { player_id: playerId || root.activePlayerId })
-    root.showOsd("Previous", "media-previous", root.activeTitle)
+    root.runAction("players/cmd/previous", { player_id: playerId || root.activePlayerId }, function(code, status, http) {
+      if (root.actionSucceeded(code, http)) root.showOsd("Previous", "media-previous", root.activeTitle)
+    })
   }
 
   function play(playerId) {
@@ -1443,16 +1464,17 @@ Item {
 
   function addFavorite(uri) {
     if (!uri) return
-    root.runAction("music/favorites/add_item", { item: uri })
-    root.refreshFavorites()
+    root.runAction("music/favorites/add_item", { item: uri }, function(code, status, http) {
+      if (root.actionSucceeded(code, http)) root.refreshFavorites()
+    })
   }
 
   // Takes a mapped library item (media_type + item_id); the API wants
   // media_type and library_item_id, not a uri.
   function removeFavorite(item) {
     if (!item || !item.media_type || !item.item_id) return
-    root.runAction("music/favorites/remove_item", { media_type: item.media_type, library_item_id: item.item_id }, function() {
-      root.refreshFavorites()
+    root.runAction("music/favorites/remove_item", { media_type: item.media_type, library_item_id: item.item_id }, function(code, status, http) {
+      if (root.actionSucceeded(code, http)) root.refreshFavorites()
     })
   }
 
@@ -1467,11 +1489,12 @@ Item {
     if (!pid || !root.hasMedia) return
     // Lets the server resolve the item, including the live track behind a
     // radio stream, instead of favoriting the station uri.
-    root.runAction("players/add_currently_playing_to_favorites", { player_id: pid }, function() {
+    root.runAction("players/add_currently_playing_to_favorites", { player_id: pid }, function(code, status, http) {
+      if (!root.actionSucceeded(code, http)) return
+      root.currentFavorite = true
       root.refreshFavorites()
+      root.showOsd("Favorited", "favorite", root.activeTitle)
     })
-    root.currentFavorite = true
-    root.showOsd("Favorited", "favorite", root.activeTitle)
   }
 
   // Open the web UI (openWebUiPath, else the server url) in the default
@@ -1508,8 +1531,9 @@ Item {
   // ------------------------------------------------------- queue options
 
   function stop(playerId) {
-    root.runAction("players/cmd/stop", { player_id: playerId || root.activePlayerId })
-    root.showOsd("Stop", "media-stop", root.activeTitle || "Music Assistant")
+    root.runAction("players/cmd/stop", { player_id: playerId || root.activePlayerId }, function(code, status, http) {
+      if (root.actionSucceeded(code, http)) root.showOsd("Stop", "media-stop", root.activeTitle || "Music Assistant")
+    })
   }
 
   function skip(seconds) {
@@ -1542,11 +1566,13 @@ Item {
     var pid = root.activePlayerId
     if (!pid) return
     if (seconds > 0) {
-      root.runAction("players/sleep_timer/set", { player_id: pid, seconds: Math.round(seconds) })
-      root.showOsd("Sleep timer", "media-pause", "Stops in " + Math.round(seconds / 60) + " min")
+      root.runAction("players/sleep_timer/set", { player_id: pid, seconds: Math.round(seconds) }, function(code, status, http) {
+        if (root.actionSucceeded(code, http)) root.showOsd("Sleep timer", "media-pause", "Stops in " + Math.round(seconds / 60) + " min")
+      })
     } else {
-      root.runAction("players/sleep_timer/clear", { player_id: pid })
-      root.showOsd("Sleep timer", "media-pause", "Cleared")
+      root.runAction("players/sleep_timer/clear", { player_id: pid }, function(code, status, http) {
+        if (root.actionSucceeded(code, http)) root.showOsd("Sleep timer", "media-pause", "Cleared")
+      })
     }
   }
 
@@ -1566,8 +1592,9 @@ Item {
   function enqueue(uri, option, label) {
     if (!uri) return
     var opt = option === "next" ? "next" : "add"
-    root.actionForPlayer(root.activePlayerId, "player_queues/play_media", { media: uri, option: opt })
-    root.showOsd(opt === "next" ? "Playing next" : "Added to queue", "playlist", label || uri)
+    root.actionForPlayer(root.activePlayerId, "player_queues/play_media", { media: uri, option: opt }, function(code, status, http) {
+      if (root.actionSucceeded(code, http)) root.showOsd(opt === "next" ? "Playing next" : "Added to queue", "playlist", label || uri)
+    })
   }
 
   // ------------------------------------------------------------ grouping
@@ -1591,23 +1618,26 @@ Item {
     var target = root.activePlayerId
     if (!target || !childId || childId === target) return
     var child = root.playerById(childId)
-    root.runAction("players/cmd/set_members", { target_player: target, player_ids_to_add: [childId] })
-    root.showOsd("Grouped", "speaker", (child ? child.name : childId) + " joins " + (root.activePlayer ? root.activePlayer.name : "the group"))
+    root.runAction("players/cmd/set_members", { target_player: target, player_ids_to_add: [childId] }, function(code, status, http) {
+      if (root.actionSucceeded(code, http)) root.showOsd("Grouped", "speaker", (child ? child.name : childId) + " joins " + (root.activePlayer ? root.activePlayer.name : "the group"))
+    })
   }
 
   function groupRemove(childId) {
     var target = root.activePlayerId
     if (!target || !childId) return
     var child = root.playerById(childId)
-    root.runAction("players/cmd/set_members", { target_player: target, player_ids_to_remove: [childId] })
-    root.showOsd("Ungrouped", "speaker", (child ? child.name : childId) + " leaves the group")
+    root.runAction("players/cmd/set_members", { target_player: target, player_ids_to_remove: [childId] }, function(code, status, http) {
+      if (root.actionSucceeded(code, http)) root.showOsd("Ungrouped", "speaker", (child ? child.name : childId) + " leaves the group")
+    })
   }
 
   function ungroup(playerId) {
     var pid = playerId || root.activePlayerId
     if (!pid) return
-    root.runAction("players/cmd/ungroup", { player_id: pid })
-    root.showOsd("Ungrouped", "speaker", (root.playerById(pid) || {}).name || "")
+    root.runAction("players/cmd/ungroup", { player_id: pid }, function(code, status, http) {
+      if (root.actionSucceeded(code, http)) root.showOsd("Ungrouped", "speaker", (root.playerById(pid) || {}).name || "")
+    })
   }
 
   // -------------------------------------------------------------- browse
@@ -1721,11 +1751,12 @@ Item {
   // Add a track to one of the library's own playlists (provider "library").
   function addToPlaylist(playlistItem, uri, label) {
     if (!playlistItem || playlistItem.provider !== "library" || !uri) {
-      root.showOsd("Music Assistant", "dialog-warning", "Only library playlists can be edited here")
+      root.reportActionFailure("Only library playlists can be edited here")
       return
     }
-    root.runAction("music/playlists/add_playlist_tracks", { db_playlist_id: playlistItem.item_id, uris: [uri] })
-    root.showOsd("Added to playlist", "playlist", (label || "Track") + " → " + playlistItem.name)
+    root.runAction("music/playlists/add_playlist_tracks", { db_playlist_id: playlistItem.item_id, uris: [uri] }, function(code, status, http) {
+      if (root.actionSucceeded(code, http)) root.showOsd("Added to playlist", "playlist", (label || "Track") + " → " + playlistItem.name)
+    })
   }
 
   function addCurrentToPlaylist(playlistItem) {
@@ -1744,6 +1775,8 @@ Item {
         connected: root.connected,
         lastError: root.lastError,
         actionError: root.actionError,
+        providerHealthSummary: root.providerHealthSummary,
+        providerProblemCount: root.providerProblems.length,
         configError: root.configError,
         activePlayerId: root.activePlayerId,
         activeQueueId: root.queueInfo ? root.queueInfo.queue_id : "",

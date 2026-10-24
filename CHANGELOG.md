@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Show enabled Music Assistant providers that need authentication or report an availability error in a persistent popup banner. The banner retains only bounded status fields, never provider setup data, and opens Music Assistant for repair.
+
+### Fixed
+- Keep Pandora recovery, provider reload and playlist-edit failures in the persistent action-error path. Delay success notifications and optimistic favorite refreshes until Music Assistant confirms the command with HTTP 200.
+- Make the real-QML tests reliably headless by removing the desktop GTK platform-theme override from their isolated Qt offscreen environment.
+
+### Changed
+- Isolate provider polling, provider-warning presentation and the complete Players tab in dedicated QML components instead of adding more unrelated state to the already large service and bar files.
+
 ## [1.1.12] - 2026-10-23
 
 ### Fixed

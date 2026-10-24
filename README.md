@@ -77,7 +77,7 @@ popup, wheel skips previous/next. The label scrolls when the title is long.
 
 ## The popup
 
-A header shows the active player and its state. Rejected commands remain visible as an error above the active tab until dismissed or a later command succeeds; the bar icon and tooltip also indicate the failure. Eight tabs down the side:
+A header shows the active player and its state. Rejected commands remain visible as an error above the active tab until dismissed or a later command succeeds; the bar icon and tooltip also indicate the failure. Provider authentication and availability problems appear in a separate banner that opens the Music Assistant web UI for repair. Eight tabs down the side:
 
 | Tab | What it does |
 |-----|--------------|
