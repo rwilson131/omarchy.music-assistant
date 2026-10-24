@@ -16,7 +16,8 @@ function serviceFixture() {
     config: {url: 'https://music.example', token: 'synthetic'}, pendingActions: [], currentAction: null,
     actionSequence: 0, pendingVolumes: {}, volumeSequence: 0, playersPollSequence: 0,
     searchGeneration: 0, browseGeneration: 0, drillGeneration: 0, favoriteTypes: ['tracks'],
-    healInProgress: false, healRetry: false, lastHealAt: 0, actionError: ''}
+    healInProgress: false, healRetry: false, lastHealAt: 0, actionError: '',
+    queueItemsDirty: true, lastQueueItemsSignature: '', lastQueueItemsFetchAt: 0, queueItemsMaxAgeMs: 15000}
   const noop = () => {}
   const context = vm.createContext({root, MaApi, ConfigSchema, Qt: {callLater: f => later.push(f)},
     Quickshell: {env: () => '/bin/bash'}, Date: {now: () => now}, console: {warn: noop},
@@ -61,7 +62,8 @@ function serviceFixture() {
     assert.equal(actionProc.running, true, 'an action must actually have started')
     actionProc.running = false; actionProc.httpCode = http; exit(code, 0); flush()
   }
-  return {root, calls, requests, reply, MaApi, context, complete, flush, actionProc, osds, advance: ms => {now += ms}}
+  return {root, calls, requests, reply, MaApi, context, complete, flush, actionProc, osds,
+    clock: () => now, advance: ms => {now += ms}}
 }
 
 const group = () => [{player_id:'child', available:true, group_members:['speaker'], group_volume:40, volume_level:25},
@@ -227,6 +229,34 @@ test('all queue edits preserve resolved ownership and save callbacks with the pr
   assert.equal(calls.length, actions.length)
   for (const call of calls) assert.equal(call.args.queue_id, 'leader', call.command)
   assert.equal(typeof calls[9].onDone, 'function')
+})
+
+test('adaptive polling reuses fresh queue items and invalidates them after actions', () => {
+  const {root, requests, reply, clock, advance} = serviceFixture()
+  root.players = group()
+  const queueInfo = {queue_id:'child',state:'playing',items:1,current_index:0,
+    current_item:{queue_item_id:'item-one'},next_item:null}
+
+  root.runFetchPlayers(); reply('playersRequest', group()); reply('queueInfoRequest', queueInfo)
+  assert.equal(requests.filter(r => r.id === 'queueRequest').length, 1)
+  reply('queueRequest', [])
+  assert.equal(root.queueItemsDirty, false)
+
+  advance(2000)
+  root.runFetchPlayers(); reply('playersRequest', group()); reply('queueInfoRequest', queueInfo)
+  assert.equal(requests.filter(r => r.id === 'queueRequest').length, 1, 'fresh unchanged items are reused')
+
+  root.reportActionStatus('player_queues/move_item', '200', 0.1, {}, null)
+  assert.equal(root.queueItemsDirty, true)
+  root.runFetchPlayers(); reply('playersRequest', group()); reply('queueInfoRequest', queueInfo)
+  assert.equal(requests.filter(r => r.id === 'queueRequest').length, 2, 'successful queue actions invalidate the cache')
+
+  root.queueItemsDirty = false
+  root.lastQueueItemsSignature = root.queueItemsSignature(queueInfo)
+  root.lastQueueItemsFetchAt = clock()
+  assert.equal(root.shouldRefreshQueueItems(queueInfo), false)
+  advance(15000)
+  assert.equal(root.shouldRefreshQueueItems(queueInfo), true, 'aged queue items are periodically refreshed')
 })
 
 test('individual volume reconciles after actual action completion', () => {

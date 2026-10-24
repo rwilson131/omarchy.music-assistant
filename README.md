@@ -56,13 +56,15 @@ omarchy plugin enable io.github.rwilson131.music-assistant right
 | `url` | — | Server URL, e.g. `http://192.168.1.52:8095` |
 | `token` | — | Long-lived access token |
 | `preferredPlayerId` | `""` | Player to control by default; updated when you pick one in the popup |
-| `pollIntervalMs` | `2000` | State poll interval |
+| `pollIntervalMs` | `2000` | Playing and reconnect state poll interval; idle polling is at least 5 seconds |
 | `searchLimit` | `20` | Results per media type |
 | `recentLimit` | `50` | Items in the Recent tab |
 | `showSourceBadge` | `true` | Provider badge on list rows |
 | `openWebUiPath` | `""` | URL the globe button opens; defaults to `url` |
 | `installMediaKeys` | `false` | Keyboard media keys (see below); the switch in the popup header writes this |
 | `mprisFallback` | `true` | Route play/pause/next to a playing MPRIS player (browser, Spotify) instead of Music Assistant |
+
+Polling stays at `pollIntervalMs` while the selected queue is playing or the server is reconnecting, and relaxes to five seconds while idle. The complete queue item list is cached for 15 seconds while playing and 30 seconds while idle, but queue changes, player changes and successful queue commands invalidate it immediately.
 
 ## Bar widget
 

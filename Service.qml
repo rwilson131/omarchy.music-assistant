@@ -36,6 +36,9 @@ Item {
   property string preferredPlayerId: ""
 
   readonly property int pollIntervalMs: Math.max(500, config && config.pollIntervalMs ? config.pollIntervalMs : 2000)
+  readonly property int idlePollIntervalMs: Math.max(5000, pollIntervalMs)
+  readonly property int effectivePollIntervalMs: !connected || queueState === "playing" ? pollIntervalMs : idlePollIntervalMs
+  readonly property int queueItemsMaxAgeMs: queueState === "playing" ? 15000 : 30000
 
   // ---------------------------------------------------------------- state
   // Replaced wholesale on each poll; the *Revision counters let bindings
@@ -554,10 +557,16 @@ Item {
 
   property bool pollingActive: false
   property bool pollInFlight: false
+  // Queue metadata is cheap and drives transport/progress. The complete item
+  // list is heavier and changes much less often, so fetch it only when its
+  // signature changes, a local queue command succeeds, or its cache ages out.
+  property bool queueItemsDirty: true
+  property string lastQueueItemsSignature: ""
+  property double lastQueueItemsFetchAt: 0
 
   Timer {
     id: pollTimer
-    interval: root.pollIntervalMs
+    interval: root.effectivePollIntervalMs
     repeat: true
     running: root.ready
     triggeredOnStart: true
@@ -590,6 +599,9 @@ Item {
     root.healRetry = false
     root.pollInFlight = false
     root.connected = false
+    root.queueItemsDirty = true
+    root.lastQueueItemsSignature = ""
+    root.lastQueueItemsFetchAt = 0
     root.applyQueueInfo(null)
     var requests = [playersRequest, queueInfoRequest, queueRequest, queueActionRequest,
       healLookup, healQueues, searchRequest, favoritesRequest, playlistsRequest,
@@ -664,9 +676,13 @@ Item {
     onResult: function(data, ctx) {
       if (!root.connectionContextCurrent(ctx)) return
       if (!root.queueContextCurrent(ctx)) { root.finishQueuePoll(ctx); return }
+      var refreshItems = root.shouldRefreshQueueItems(data)
+      ctx.queueItemsSignature = root.queueItemsSignature(data)
       root.applyQueueInfo(data)
-      // No active MA queue (for example, a device's external source).
-      if (!root.queueInfo || !root.sendRequest(queueRequest, root.api("player_queues/items", { queue_id: root.queueInfo.queue_id, limit: 200, offset: 0 }, "poll-queue"), ctx))
+      // No active MA queue (for example, a device's external source), or a
+      // still-fresh item list whose metadata signature has not changed.
+      if (!root.queueInfo || !refreshItems
+          || !root.sendRequest(queueRequest, root.api("player_queues/items", { queue_id: root.queueInfo.queue_id, limit: 200, offset: 0 }, "poll-queue"), ctx))
         root.finishQueuePoll(ctx)
     }
   }
@@ -677,7 +693,12 @@ Item {
     label: "queue"
     onResult: function(data, ctx) {
       if (!root.connectionContextCurrent(ctx)) return
-      if (root.queueContextCurrent(ctx)) root.applyQueue(data)
+      if (root.queueContextCurrent(ctx) && root.queuePayloadValid(data)) {
+        root.applyQueue(data)
+        root.lastQueueItemsSignature = ctx.queueItemsSignature || ""
+        root.lastQueueItemsFetchAt = Date.now()
+        root.queueItemsDirty = false
+      }
       root.finishQueuePoll(ctx)
     }
   }
@@ -690,6 +711,26 @@ Item {
     if (!root.connectionContextCurrent(ctx)) return
     root.pollInFlight = false
     if (!root.queueContextCurrent(ctx)) root.refreshState()
+  }
+
+  function queueItemsSignature(q) {
+    if (!q || typeof q !== "object" || !q.queue_id) return ""
+    var current = q.current_item && q.current_item.queue_item_id ? q.current_item.queue_item_id : ""
+    var next = q.next_item && q.next_item.queue_item_id ? q.next_item.queue_item_id : ""
+    var count = typeof q.items === "number" ? q.items : -1
+    var index = typeof q.current_index === "number" ? q.current_index : -1
+    return [q.queue_id, count, index, current, next].join("|")
+  }
+
+  function queuePayloadValid(payload) {
+    return Array.isArray(payload) || !!(payload && Array.isArray(payload.items))
+  }
+
+  function shouldRefreshQueueItems(q) {
+    var signature = root.queueItemsSignature(q)
+    if (!signature) return false
+    if (root.queueItemsDirty || signature !== root.lastQueueItemsSignature) return true
+    return Date.now() - root.lastQueueItemsFetchAt >= root.queueItemsMaxAgeMs
   }
 
   function applyQueueInfo(q) {
@@ -973,6 +1014,9 @@ Item {
   function reportActionStatus(command, httpCode, elapsedSec, args, actionContext) {
     if (!httpCode || httpCode === "000") return
     if (httpCode === "200") {
+      if (command.indexOf("player_queues/") === 0 || MaApi.isPlayCommand(command)
+          || command === "players/add_currently_playing_to_favorites")
+        root.queueItemsDirty = true
       root.clearActionError()
       return
     }
@@ -1795,6 +1839,9 @@ Item {
         elapsed: root.activeElapsed,
         duration: root.activeDuration,
         pollingActive: root.pollingActive,
+        pollIntervalMs: root.effectivePollIntervalMs,
+        queueItemsDirty: root.queueItemsDirty,
+        queueItemsAgeMs: root.lastQueueItemsFetchAt > 0 ? Math.max(0, Date.now() - root.lastQueueItemsFetchAt) : null,
         queueState: root.queueState,
         queueIndex: root.queuePosition,
         crossfade: root.crossfadeEnabled,

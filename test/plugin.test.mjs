@@ -251,6 +251,17 @@ test("QML source retains disconnect, latest-request and badge guards", async () 
   assert.equal(widget.includes("showSourceBadge: true"), false)
 })
 
+test("polling adapts to playback and avoids unchanged queue item reads", async () => {
+  const service = await text("Service.qml")
+  assert.match(service, /readonly property int idlePollIntervalMs: Math\.max\(5000, pollIntervalMs\)/)
+  assert.match(service, /readonly property int effectivePollIntervalMs: !connected \|\| queueState === "playing" \? pollIntervalMs : idlePollIntervalMs/)
+  assert.match(service, /interval: root\.effectivePollIntervalMs/)
+  assert.match(service, /function queueItemsSignature\(q\)/)
+  assert.match(service, /function shouldRefreshQueueItems\(q\)/)
+  assert.match(service, /Date\.now\(\) - root\.lastQueueItemsFetchAt >= root\.queueItemsMaxAgeMs/)
+  assert.match(service, /command\.indexOf\("player_queues\/"\) === 0[\s\S]*root\.queueItemsDirty = true/)
+})
+
 test("provider health is isolated, bounded and visible in every popup tab", async () => {
   const [service, health, banner, widget, playersTab] = await Promise.all([
     text("Service.qml"), text("ProviderHealth.qml"), text("ProviderHealthBanner.qml"), text("BarWidget.qml"), text("PlayersTab.qml"),
@@ -307,7 +318,7 @@ test("manifest, preview and third-party notices remain publication-ready", async
     text("README.md"), text("THIRD_PARTY_NOTICES.md"), text("LICENSES/Apache-2.0.txt"),
   ])
   const changelog = await text("CHANGELOG.md")
-  assert.match(changelog, /^## \[Unreleased\]\n\n## \[1\.1\.13\] - 2026-10-23\n\n### Added\n[\s\S]*?\n### Fixed\n[\s\S]*?\n### Changed\n[\s\S]*?\n## \[1\.1\.12\] - 2026-10-23\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.11\] - 2026-10-23\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.10\] - 2026-10-19\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.9\] - 2026-10-13\n\n### Changed\n[\s\S]*?\n\n## \[1\.1\.8\] - 2026-10-10\n\n### Security\n[\s\S]*?\n\n## \[1\.1\.7\] - 2026-10-09$/m)
+  assert.match(changelog, /^## \[Unreleased\]\n\n### Changed\n[\s\S]*?\n## \[1\.1\.13\] - 2026-10-23\n\n### Added\n[\s\S]*?\n### Fixed\n[\s\S]*?\n### Changed\n[\s\S]*?\n## \[1\.1\.12\] - 2026-10-23\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.11\] - 2026-10-23\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.10\] - 2026-10-19\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.9\] - 2026-10-13\n\n### Changed\n[\s\S]*?\n\n## \[1\.1\.8\] - 2026-10-10\n\n### Security\n[\s\S]*?\n\n## \[1\.1\.7\] - 2026-10-09$/m)
   assert.match(readme, /^## Requirements$/m)
   assert.match(readme, /^## Removal$/m)
   assert.match(readme, /^## Pandora stream recovery$/m)

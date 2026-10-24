@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Use adaptive polling: retain the configured interval while playing or reconnecting, relax to five seconds while idle, and reuse unchanged queue item lists for 15 seconds while playing or 30 seconds while idle. Successful queue actions and queue-signature changes still trigger an immediate item refresh.
+
 ## [1.1.13] - 2026-10-23
 
 ### Added
