@@ -16,7 +16,7 @@ function serviceFixture() {
     config: {url: 'https://music.example', token: 'synthetic'}, pendingActions: [], currentAction: null,
     actionSequence: 0, pendingVolumes: {}, volumeSequence: 0, playersPollSequence: 0,
     searchGeneration: 0, browseGeneration: 0, drillGeneration: 0, favoriteTypes: ['tracks'],
-    healInProgress: false, healRetry: false, lastHealAt: 0}
+    healInProgress: false, healRetry: false, lastHealAt: 0, actionError: ''}
   const noop = () => {}
   const context = vm.createContext({root, MaApi, ConfigSchema, Qt: {callLater: f => later.push(f)},
     Quickshell: {env: () => '/bin/bash'}, Date: {now: () => now}, console: {warn: noop},
@@ -234,6 +234,24 @@ test('individual volume reconciles after actual action completion', () => {
   root.runFetchPlayers(); reply('playersRequest', group())
   assert.equal(root.players[1].volume_level,30)
   assert.equal(root.pendingVolumes.speaker, undefined)
+})
+
+test('action failures stay visible until dismissal or a successful command', () => {
+  const {root, actionProc, complete, reply} = serviceFixture()
+  root.reportActionStatus('players/cmd/play','500',0.2,{},null)
+  assert.equal(root.actionError, 'Playback failed — check the music provider connection [HTTP 500]')
+  root.reportActionStatus('players/cmd/play','200',0.2,{},null)
+  assert.equal(root.actionError, '')
+
+  root.play('child')
+  complete(7, '000')
+  assert.equal(root.actionError, "Music Assistant didn't respond")
+  root.clearActionError()
+  assert.equal(root.actionError, '')
+
+  root.clearQueue('child')
+  reply('queueActionRequest', null)
+  assert.equal(root.actionError, "Couldn't find the active player queue")
 })
 
 test('late action status cannot attach provider recovery to a new selection', () => {

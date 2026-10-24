@@ -44,6 +44,9 @@ Item {
   property int connectionGeneration: 0
   property bool connected: false
   property string lastError: ""
+  // Command failures remain visible in the popup until a later command succeeds
+  // or the user dismisses them. Polling success must not erase action feedback.
+  property string actionError: ""
   property int revision: 0
 
   property var players: []
@@ -818,6 +821,15 @@ Item {
     }))
   }
 
+  function reportActionFailure(message) {
+    root.actionError = String(message || "Command failed")
+    root.showOsd("Music Assistant", "dialog-warning", root.actionError)
+  }
+
+  function clearActionError() {
+    root.actionError = ""
+  }
+
   // ----------------------------------------------------------- action api
 
   // One action at a time goes through actionProc; setting running = true on a
@@ -829,7 +841,10 @@ Item {
   property int actionSequence: 0
 
   function runAction(command, args, onDone, playerId, selectionBound) {
-    if (!root.ready) return
+    if (!root.ready) {
+      root.reportActionFailure("Music Assistant is not ready")
+      return
+    }
     // Coalesce only pending replacements and absolute levels for the same
     // player. Distinct enqueues and callbacks on retained actions stay ordered.
     if (MaApi.isQueueReplacingPlay(command, args))
@@ -838,7 +853,10 @@ Item {
       root.pendingActions = root.pendingActions.filter(function(a) {
         return a.command !== command || a.args.player_id !== args.player_id
       })
-    if (root.pendingActions.length >= 20) return
+    if (root.pendingActions.length >= 20) {
+      root.reportActionFailure("Too many pending commands — try again")
+      return
+    }
     root.pendingActions.push({ command: command, args: Object.assign({}, args || {}), onDone: onDone || null,
       selectionBound: !!selectionBound, playerId: playerId || "", generation: root.selectionGeneration,
       connectionGeneration: root.connectionGeneration, actionId: ++root.actionSequence })
@@ -917,7 +935,7 @@ Item {
         if (code === 28 && actionCommand === "player_queues/play_media")
           root.showOsd("Music Assistant", "media-play", "Starting… some stations take up to 20 seconds")
         else if (code !== 0)
-          root.showOsd("Music Assistant", "dialog-warning", "Music Assistant didn't respond")
+          root.reportActionFailure("Music Assistant didn't respond")
         root.finishAction(code, status, httpCode)
       } else {
         // An old process must not complete or clear a newer connection's work.
@@ -934,17 +952,21 @@ Item {
   // rejected the command (e.g. a provider that is signed out cannot play its
   // stations); tell the user instead of silently doing nothing.
   function reportActionStatus(command, httpCode, elapsedSec, args, actionContext) {
-    if (!httpCode || httpCode === "200" || httpCode === "000") return
+    if (!httpCode || httpCode === "000") return
+    if (httpCode === "200") {
+      root.clearActionError()
+      return
+    }
     console.warn("[music-assistant] " + command + " -> HTTP " + httpCode + " after " + (elapsedSec || 0).toFixed(1) + "s")
     // A play that fails only after the server's 15 s wait is a stuck stream
     // slot, not a bad pick: reset the provider and retry (see tryStreamSlotHeal).
     if (httpCode === "500" && MaApi.isPlayCommand(command) && (elapsedSec || 0) >= 12
         && root.tryStreamSlotHeal(command, args, actionContext))
       return
-    var isPlay = command === "player_queues/play_media"
-    var what = isPlay ? "Couldn't play that" : "Command failed (" + command.split("/").pop() + ")"
-    var hint = isPlay && httpCode === "500" ? " — check the provider is signed in to Music Assistant" : ""
-    root.showOsd("Music Assistant", "dialog-warning", what + hint + " [" + httpCode + "]")
+    var isPlay = MaApi.isPlayCommand(command)
+    var what = isPlay ? "Playback failed" : "Command failed (" + command.split("/").pop() + ")"
+    var hint = isPlay && httpCode === "500" ? " — check the music provider connection" : ""
+    root.reportActionFailure(what + hint + " [HTTP " + httpCode + "]")
   }
 
   // ------------------------------------------------- stream-slot self-heal
@@ -1089,7 +1111,11 @@ Item {
       if (!action || action.actionId !== ctx.actionId) return
       if (!root.actionContextCurrent(action)) { root.finishAction(-1, 0, ""); return }
       var qid = data && typeof data.queue_id === "string" ? data.queue_id : ""
-      if (!qid) { root.finishAction(-1, 0, ""); return }
+      if (!qid) {
+        root.reportActionFailure("Couldn't find the active player queue")
+        root.finishAction(-1, 0, "")
+        return
+      }
       if (action.command === "player_queues/transfer") action.args.source_queue_id = qid
       else action.args.queue_id = qid
       root.dispatchAction(action)
@@ -1717,6 +1743,7 @@ Item {
         ready: root.ready,
         connected: root.connected,
         lastError: root.lastError,
+        actionError: root.actionError,
         configError: root.configError,
         activePlayerId: root.activePlayerId,
         activeQueueId: root.queueInfo ? root.queueInfo.queue_id : "",

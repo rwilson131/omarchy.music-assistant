@@ -11,12 +11,12 @@ IPC surface for keybindings and scripts.
 This is the [rwilson131](https://github.com/rwilson131/omarchy.music-assistant)
 fork of the plugin originally written by
 [manologarciadev](https://github.com/manologarciadev/omarchy.music-assistant).
-See [Credits](#credits). Tested against Music Assistant 2.10.5 and Omarchy 4.0.
+See [Credits](#credits). Tested against Music Assistant 2.10.8 and Omarchy 4.0.
 
 ## Requirements
 
 - Omarchy 4 with the Quattro shell and its `qs` IPC client.
-- A reachable Music Assistant server (tested with 2.10.5).
+- A reachable Music Assistant server (tested with 2.10.8).
 - A long-lived Music Assistant access token; the token grants administrator
   access to that server.
 - `bash` and `curl` for API requests. The optional contextual volume-key
@@ -77,7 +77,7 @@ popup, wheel skips previous/next. The label scrolls when the title is long.
 
 ## The popup
 
-A header shows the active player and its state. Eight tabs down the side:
+A header shows the active player and its state. Rejected commands remain visible as an error above the active tab until dismissed or a later command succeeds; the bar icon and tooltip also indicate the failure. Eight tabs down the side:
 
 | Tab | What it does |
 |-----|--------------|

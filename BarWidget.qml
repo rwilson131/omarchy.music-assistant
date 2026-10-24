@@ -175,7 +175,9 @@ BarWidget {
       id: glyph
       anchors.verticalCenter: parent.verticalCenter
       text: root.playIcon
-      color: root.isPlaying ? root.bar.barForeground : Qt.darker(root.bar.barForeground, 1.5)
+      color: root.service && root.service.actionError
+        ? root.bar.urgent
+        : root.isPlaying ? root.bar.barForeground : Qt.darker(root.bar.barForeground, 1.5)
       font.family: root.bar.fontFamily
       font.pixelSize: Style.font.body
       Behavior on color {
@@ -244,7 +246,9 @@ BarWidget {
     }
     onEntered: if (root.bar) root.bar.showTooltip(root,
       root.serviceReady
-        ? (root.title ? (root.title + (root.artist ? " — " + root.artist : "")) : "Music Assistant")
+        ? (root.service && root.service.actionError
+          ? "Music Assistant — " + root.service.actionError
+          : (root.title ? (root.title + (root.artist ? " — " + root.artist : "")) : "Music Assistant"))
         : "")
     onExited: if (root.bar) root.bar.hideTooltip(root)
   }
@@ -468,6 +472,26 @@ BarWidget {
                   text: root.serviceReady
                     ? ("Connecting to Music Assistant…")
                     : ("Music Assistant not configured.\n" + (root.service && root.service.configError ? root.service.configError : ""))
+                }
+              }
+
+              // Command failures are separate from connection polling: a
+              // successful poll must not hide a rejected playback or queue action.
+              Text {
+                width: parent.width
+                visible: root.service && root.service.actionError !== ""
+                textFormat: Text.PlainText
+                text: root.service ? root.service.actionError + "  ·  Click to dismiss" : ""
+                color: root.bar ? root.bar.urgent : Color.urgent
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                font.bold: true
+                wrapMode: Text.WordWrap
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: if (root.service) root.service.clearActionError()
                 }
               }
 

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Keep playback, queue and transport failures visible in the popup until dismissed or a later command succeeds. Failed actions also mark the bar icon and tooltip, while connection and queue-resolution failures no longer disappear silently after the next successful poll.
+- Confirm Music Assistant 2.10.8 compatibility, including its fixes for expired Apple Music app tokens, queue transfers and idle sync-group cleanup; no JSON API changes were required.
+
 ## [1.1.11] - 2026-10-23
 
 ### Fixed
