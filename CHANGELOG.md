@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.13] - 2026-10-23
+
 ### Added
 - Show enabled Music Assistant providers that need authentication or report an availability error in a persistent popup banner. The banner retains only bounded status fields, never provider setup data, and opens Music Assistant for repair.
 
