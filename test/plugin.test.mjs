@@ -85,6 +85,12 @@ test("server-provided image URLs are restricted to HTTP(S)", async () => {
   assert.equal(api.safeImageUrl("file:///etc/passwd", 2048), "")
   assert.equal(api.safeImageUrl("data:image/png;base64,AAAA", 2048), "")
   assert.equal(api.safeImageUrl("javascript:alert(1)", 2048), "")
+
+  const siriusThumb = "https://albumart.siriusxm.com/albumart/0300/WBAL2K_NDCA-000292397-002_t.jpg"
+  assert.equal(api.trackImageUrl({image_url:siriusThumb}),
+    "https://albumart.siriusxm.com/albumart/0300/WBAL2K_NDCA-000292397-002_m.jpg")
+  assert.equal(api.trackImageUrl({image_url:"https://albumart.siriusxm.com.evil.test/albumart/0300/cover_t.jpg"}),
+    "https://albumart.siriusxm.com.evil.test/albumart/0300/cover_t.jpg")
 })
 
 test("media mapping bounds fields and proxies provider-relative artwork", async () => {
@@ -244,7 +250,7 @@ test("QML source retains disconnect, latest-request and badge guards", async () 
   assert.match(service, /function clearRequestErrorForLabel\(label, ctx\)[\s\S]*root\.requestErrorLabel !==/)
   assert.match(widget, /root\.service\.requestError \+ "  ·  Click to dismiss"/)
   assert.match(widget, /onClicked: if \(root\.service\) root\.service\.clearRequestError\(\)/)
-  assert.equal(occurrences(widget, 'label: "Autoplay"'), 1)
+  assert.doesNotMatch(widget, /label: "Autoplay"/)
   assert.doesNotMatch(widget, /Don(?:'|’)t stop|dontStopTheMusic/)
   assert.doesNotMatch(service, /dont_stop_the_music|dontStopTheMusic/)
   assert.match(widget, /onToggleMute: if \(root\.service\) root\.service\.toggleMute\(root\.service\.activePlayerId, true\)/)
@@ -269,6 +275,24 @@ test("QML source retains disconnect, latest-request and badge guards", async () 
   assert.equal(occurrences(widget, "SearchResultRow {"), 6)
   assert.equal(occurrences(widget, "showSourceBadge: root.sourceBadgesEnabled"), 6)
   assert.equal(widget.includes("showSourceBadge: true"), false)
+  assert.match(widget, /NumberAnimation on x \{[\s\S]*onRunningChanged: if \(!running\) labelText\.x = 0/)
+})
+
+test("Now tab keeps an artwork-first layout without redundant visible actions", async () => {
+  const [widget, controls, service] = await Promise.all([
+    text("BarWidget.qml"), text("PlayerControls.qml"), text("Service.qml"),
+  ])
+  assert.match(controls, /width: Style\.space\(112\)[\s\S]*height: Style\.space\(112\)/)
+  assert.match(controls, /text: root\.title \|\| "Nothing playing"[\s\S]*horizontalAlignment: Text\.AlignHCenter[\s\S]*maximumLineCount: 2/)
+  assert.match(controls, /Primary transport[\s\S]*id: volumeRow[\s\S]*Secondary playback actions sit at the bottom/)
+  assert.doesNotMatch(widget, /label: "(?:Autoplay|Crossfade|Stop)"/)
+  assert.match(controls, /property bool autoplayEnabled: false/)
+  assert.match(controls, /property int sleepRemainingSeconds: 0/)
+  assert.match(controls, /onClicked: root\.toggleAutoplay\(\)/)
+  assert.match(controls, /onClicked: root\.cycleSleepTimer\(\)/)
+  assert.match(widget, /onToggleAutoplay: if \(root\.service\) root\.service\.setAutoplay/)
+  assert.match(service, /function setCrossfade\(on\)/)
+  assert.match(service, /function stop\(playerId\)/)
 })
 
 test("polling adapts to playback and avoids unchanged queue item reads", async () => {
@@ -353,7 +377,7 @@ test("manifest, preview and third-party notices remain publication-ready", async
     text("README.md"), text("THIRD_PARTY_NOTICES.md"), text("LICENSES/Apache-2.0.txt"),
   ])
   const changelog = await text("CHANGELOG.md")
-  assert.match(changelog, /^## \[Unreleased\]\n\n## \[1\.1\.15\] - 2026-10-26\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.14\] - 2026-10-23\n\n### Changed\n[\s\S]*?\n## \[1\.1\.13\] - 2026-10-23\n\n### Added\n[\s\S]*?\n### Fixed\n[\s\S]*?\n### Changed\n[\s\S]*?\n## \[1\.1\.12\] - 2026-10-23\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.11\] - 2026-10-23\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.10\] - 2026-10-19\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.9\] - 2026-10-13\n\n### Changed\n[\s\S]*?\n\n## \[1\.1\.8\] - 2026-10-10\n\n### Security\n[\s\S]*?\n\n## \[1\.1\.7\] - 2026-10-09$/m)
+  assert.match(changelog, /^## \[Unreleased\]\n\n### Changed\n[\s\S]*?\n## \[1\.1\.15\] - 2026-10-26\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.14\] - 2026-10-23\n\n### Changed\n[\s\S]*?\n## \[1\.1\.13\] - 2026-10-23\n\n### Added\n[\s\S]*?\n### Fixed\n[\s\S]*?\n### Changed\n[\s\S]*?\n## \[1\.1\.12\] - 2026-10-23\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.11\] - 2026-10-23\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.10\] - 2026-10-19\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.9\] - 2026-10-13\n\n### Changed\n[\s\S]*?\n\n## \[1\.1\.8\] - 2026-10-10\n\n### Security\n[\s\S]*?\n\n## \[1\.1\.7\] - 2026-10-09$/m)
   assert.match(readme, /^## Requirements$/m)
   assert.match(readme, /^## Removal$/m)
   assert.match(readme, /^## Pandora stream recovery$/m)

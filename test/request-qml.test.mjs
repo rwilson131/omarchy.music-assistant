@@ -120,7 +120,7 @@ test("PlayerControls artwork fallback follows real QML Image.Error and recovery"
     const controls = await readFile(new URL('../PlayerControls.qml', import.meta.url), 'utf8')
     // Run the production Image and fallback Text together. Only theme geometry
     // is substituted; source, status and visibility bindings remain unchanged.
-    const artwork = controls.slice(controls.indexOf('        Image {'), controls.indexOf('\n      }\n\n      Column {'))
+    const artwork = controls.slice(controls.indexOf('      Image {'), controls.indexOf('\n    }\n\n    Column {'))
       .replace(/Style\.space\(2\)/g, '2').replace('Style.font.displayLarge', '24')
     await writeFile(join(dir, 'cover.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="red"/></svg>')
     await writeFile(join(dir, 'shell.qml'), `import QtQuick

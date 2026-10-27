@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Use SiriusXM's 450px album-art variant instead of enlarging the 75px current-media thumbnail.
+- Redesign the Now tab around larger centered artwork and two-line titles, consolidate Autoplay and the sleep timer into the secondary action row, and remove the redundant Stop and niche Crossfade chips while retaining their IPC support.
+
+### Fixed
+- Reset the bar ticker position when scrolling stops so a shorter next title cannot remain clipped to one character.
+
 ## [1.1.15] - 2026-10-26
 
 ### Fixed

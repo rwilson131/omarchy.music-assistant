@@ -187,6 +187,10 @@ BarWidget {
           from: scrollClip.width
           to: -labelText.implicitWidth
           easing.type: Easing.Linear
+          // A stopped animation otherwise leaves x at its last frame. When a
+          // long title is replaced by a short one, that can strand all but one
+          // character outside the clip until another long title starts.
+          onRunningChanged: if (!running) labelText.x = 0
         }
       }
     }
@@ -494,77 +498,44 @@ BarWidget {
               }
 
               // ------------------ Now section
-              Column {
+              PlayerControls {
                 width: parent.width
-                spacing: Style.space(8)
                 visible: root.popupSection === "now"
-
-                PlayerControls {
-                  width: parent.width
-                  bar: root.bar
-                  activePlayer: root.service ? root.service.activePlayer : null
-                  activeMedia: root.media
-                  imageUrl: root.imageUrl
-                  title: root.title
-                  artist: root.artist
-                  album: root.album
-                  volume: root.volume
-                  muted: root.service && root.service.activePlayer ? !!root.service.activePlayer.volume_muted : false
-                  elapsed: root.elapsed
-                  duration: root.duration
-                  isPlaying: root.isPlaying
-                  shuffleEnabled: root.service ? root.service.shuffleEnabled : false
-                  repeatMode: root.service ? root.service.repeatMode : "off"
-                  dynamicQueue: root.service ? root.service.queueDynamic : false
-                  isFavorite: root.service ? root.service.currentFavorite : false
-                  onPlayPause: if (root.service) root.service.playPause()
-                  onNext: if (root.service) root.service.next()
-                  onPrevious: if (root.service) root.service.previous()
-                  onSeek: function(seconds) { if (root.service) root.service.seek(root.service.activePlayerId, seconds) }
-                  onToggleShuffle: if (root.service) root.service.toggleShuffle()
-                  onCycleRepeat: if (root.service) root.service.cycleRepeat()
-                  onFavoriteCurrent: if (root.service) root.service.favoriteCurrent()
-                  onOpenWebUI: if (root.service) root.service.openWebUI()
-                  onChangeVolume: function(percent) { if (root.service) root.service.setVolumeLocal(root.service.activePlayerId, percent) }
-                  onToggleMute: if (root.service) root.service.toggleMute(root.service.activePlayerId, true)
+                bar: root.bar
+                activePlayer: root.service ? root.service.activePlayer : null
+                activeMedia: root.media
+                imageUrl: root.imageUrl
+                title: root.title
+                artist: root.artist
+                album: root.album
+                volume: root.volume
+                muted: root.service && root.service.activePlayer ? !!root.service.activePlayer.volume_muted : false
+                elapsed: root.elapsed
+                duration: root.duration
+                isPlaying: root.isPlaying
+                shuffleEnabled: root.service ? root.service.shuffleEnabled : false
+                repeatMode: root.service ? root.service.repeatMode : "off"
+                dynamicQueue: root.service ? root.service.queueDynamic : false
+                isFavorite: root.service ? root.service.currentFavorite : false
+                autoplayEnabled: root.service ? root.service.autoplayEnabled : false
+                sleepRemainingSeconds: root.service ? root.service.sleepRemainingSeconds : 0
+                onPlayPause: if (root.service) root.service.playPause()
+                onNext: if (root.service) root.service.next()
+                onPrevious: if (root.service) root.service.previous()
+                onSeek: function(seconds) { if (root.service) root.service.seek(root.service.activePlayerId, seconds) }
+                onToggleShuffle: if (root.service) root.service.toggleShuffle()
+                onCycleRepeat: if (root.service) root.service.cycleRepeat()
+                onFavoriteCurrent: if (root.service) root.service.favoriteCurrent()
+                onToggleAutoplay: if (root.service) root.service.setAutoplay(!root.service.autoplayEnabled)
+                onCycleSleepTimer: {
+                  if (!root.service) return
+                  var r = root.service.sleepRemainingSeconds
+                  var next = r <= 0 ? 15 : (r <= 15 * 60 ? 30 : (r <= 30 * 60 ? 60 : (r <= 60 * 60 ? 90 : 0)))
+                  root.service.setSleepTimer(next * 60)
                 }
-
-                // Queue options, the sleep timer and stop.
-                Flow {
-                  width: parent.width
-                  spacing: Style.space(4)
-                  visible: root.serviceReady && root.service && root.service.activePlayer !== null
-
-                  Chip {
-                    label: "Crossfade"
-                    active: root.service ? root.service.crossfadeEnabled : false
-                    onClicked: root.service.setCrossfade(!active)
-                  }
-                  Chip {
-                    label: "Autoplay"
-                    active: root.service ? root.service.autoplayEnabled : false
-                    onClicked: root.service.setAutoplay(!active)
-                  }
-                  Chip {
-                    icon: "󰒲"
-                    label: root.service && root.service.sleepRemainingSeconds > 0
-                      ? Math.ceil(root.service.sleepRemainingSeconds / 60) + " min"
-                      : "Sleep"
-                    active: root.service ? root.service.sleepRemainingSeconds > 0 : false
-                    // Cycles 15 → 30 → 60 → 90 min → off.
-                    onClicked: {
-                      var r = root.service.sleepRemainingSeconds
-                      var next = r <= 0 ? 15 : (r <= 15 * 60 ? 30 : (r <= 30 * 60 ? 60 : (r <= 60 * 60 ? 90 : 0)))
-                      root.service.setSleepTimer(next * 60)
-                    }
-                  }
-                  Chip {
-                    icon: "󰓛"
-                    label: "Stop"
-                    enabled: root.isPlaying || (root.service && root.service.isPaused)
-                    onClicked: root.service.stop(root.service.activePlayerId)
-                  }
-                }
+                onOpenWebUI: if (root.service) root.service.openWebUI()
+                onChangeVolume: function(percent) { if (root.service) root.service.setVolumeLocal(root.service.activePlayerId, percent) }
+                onToggleMute: if (root.service) root.service.toggleMute(root.service.activePlayerId, true)
               }
 
               // ------------------ Players section

@@ -184,7 +184,12 @@ function trackAlbum(media) {
 
 function trackImageUrl(media) {
   if (!media || !media.image_url) return ""
-  return safeImageUrl(media.image_url, 2048)
+  var url = safeImageUrl(media.image_url, 2048)
+  // SiriusXM current-media metadata points at a 75px `_t` thumbnail even
+  // though the same artwork service publishes a 450px `_m` image. Use the
+  // larger variant only for the exact SiriusXM artwork host.
+  var sirius = url.match(/^(https:\/\/albumart\.siriusxm\.com\/albumart\/[0-9]{4}\/[^?#]+)_t\.jpg(\?[^#]*)?$/i)
+  return sirius ? sirius[1] + "_m.jpg" + (sirius[2] || "") : url
 }
 
 function pickActivePlayerId(players, preferredId) {
