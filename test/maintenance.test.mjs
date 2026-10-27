@@ -222,13 +222,13 @@ test('all queue edits preserve resolved ownership and save callbacks with the pr
   const {root, calls, reply, complete} = serviceFixture()
   root.queue = [{queue_item_id:'one'}]
   const actions = [() => root.playIndex('child',2), () => root.toggleShuffle(), () => root.cycleRepeat(),
-    () => root.setCrossfade(true), () => root.setAutoplay(true), () => root.setDontStopTheMusic(true),
-    () => root.moveQueueItem('one',1), () => root.moveQueueItemEnd('one'), () => root.skip(10),
+    () => root.setCrossfade(true), () => root.setAutoplay(true), () => root.moveQueueItem('one',1),
+    () => root.moveQueueItemEnd('one'), () => root.skip(10),
     () => root.saveQueueAsPlaylist('Synthetic playlist'), () => root.deleteQueueItem('child','one')]
   for (const action of actions) {action(); reply('queueActionRequest', {queue_id:'leader'}); complete()}
   assert.equal(calls.length, actions.length)
   for (const call of calls) assert.equal(call.args.queue_id, 'leader', call.command)
-  assert.equal(typeof calls[9].onDone, 'function')
+  assert.equal(typeof calls.find(call => call.command === 'player_queues/save_as_playlist')?.onDone, 'function')
 })
 
 test('adaptive polling reuses fresh queue items and invalidates them after actions', () => {

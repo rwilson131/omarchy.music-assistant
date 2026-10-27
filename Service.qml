@@ -95,10 +95,9 @@ Item {
   property string repeatMode: "off"
   property bool crossfadeEnabled: false
   property bool autoplayEnabled: false
-  property bool dontStopTheMusicEnabled: false
   property bool currentFavorite: false
-  // A dynamic queue (smart shuffle, "don't stop the music", artist radio)
-  // is filled by the server and rejects shuffle/repeat changes with a 500.
+  // A dynamic queue (smart shuffle or artist radio) is filled by the server
+  // and rejects shuffle/repeat changes with a 500.
   property bool queueDynamic: false
   // Elapsed time as of the last poll, and when that was, so the progress
   // bar can advance locally between polls.
@@ -758,7 +757,6 @@ Item {
       root.repeatMode = "off"
       root.crossfadeEnabled = false
       root.autoplayEnabled = false
-      root.dontStopTheMusicEnabled = false
       root.queueDynamic = false
       root.currentFavorite = false
       root.queueElapsedBase = 0
@@ -785,7 +783,6 @@ Item {
     root.repeatMode = MaApi.boundedString(q.repeat_mode || "off", 20)
     root.crossfadeEnabled = q.crossfade_enabled === true
     root.autoplayEnabled = q.autoplay_enabled === true
-    root.dontStopTheMusicEnabled = q.dont_stop_the_music_enabled === true
     root.queueDynamic = q.is_dynamic === true || q.smart_shuffle_active === true
     root.currentFavorite = root.queueInfo.current_item ? root.queueInfo.current_item.favorite : false
     // elapsed_time is as of elapsed_time_last_updated (server epoch seconds).
@@ -1647,12 +1644,6 @@ Item {
     if (!root.activePlayerId) return
     root.actionForPlayer(root.activePlayerId, "player_queues/autoplay", { autoplay_enabled: !!on })
     root.autoplayEnabled = !!on
-  }
-
-  function setDontStopTheMusic(on) {
-    if (!root.activePlayerId) return
-    root.actionForPlayer(root.activePlayerId, "player_queues/dont_stop_the_music", { dont_stop_the_music_enabled: !!on })
-    root.dontStopTheMusicEnabled = !!on
   }
 
   // Sleep timer on the active player; seconds <= 0 clears it.

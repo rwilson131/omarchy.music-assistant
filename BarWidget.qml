@@ -538,8 +538,7 @@ BarWidget {
                   onToggleMute: if (root.service) root.service.toggleMute(root.service.activePlayerId)
                 }
 
-                // Queue options (player_queues/crossfade, autoplay,
-                // dont_stop_the_music), the sleep timer and stop.
+                // Queue options, the sleep timer and stop.
                 Flow {
                   width: parent.width
                   spacing: Style.space(4)
@@ -554,11 +553,6 @@ BarWidget {
                     label: "Autoplay"
                     active: root.service ? root.service.autoplayEnabled : false
                     onClicked: root.service.setAutoplay(!active)
-                  }
-                  Chip {
-                    label: "Don't stop"
-                    active: root.service ? root.service.dontStopTheMusicEnabled : false
-                    onClicked: root.service.setDontStopTheMusic(!active)
                   }
                   Chip {
                     icon: "󰒲"

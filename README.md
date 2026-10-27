@@ -83,7 +83,7 @@ A header shows the active player and its state. Rejected commands remain visible
 
 | Tab | What it does |
 |-----|--------------|
-| **Now** | Album artwork when Music Assistant provides it, with a music-note fallback when it does not; title, transport (previous, play/pause, next, shuffle, repeat, favorite, web UI), progress bar (click to seek), volume slider and mute. Chips for Crossfade, Autoplay, Don't stop the music, a sleep timer (click cycles 15 → 30 → 60 → 90 min → off) and Stop. |
+| **Now** | Album artwork when Music Assistant provides it, with a music-note fallback when it does not; title, transport (previous, play/pause, next, shuffle, repeat, favorite, web UI), progress bar (click to seek), volume slider and mute. Chips for Crossfade, Autoplay, a sleep timer (click cycles 15 → 30 → 60 → 90 min → off) and Stop. |
 | **Players** | Every player, sorted active → playing → idle → groups → unavailable. Click makes a player the one the popup controls, without touching what is playing anywhere; **Move here** carries the active player's queue to that player; right-click mutes. **Join** groups a speaker with the active player, **Leave** removes it, **Ungroup** dissolves the active player's group. The volume slider moves the group when the active player leads one. |
 | **Queue** | Click plays an item, right-click removes it. Per-row buttons move it up, down, to the end, or remove it. **Save** (or `Ctrl+S`) asks for a name and saves the queue as a new library playlist, which appears in Lists a few seconds later; **Clear** empties it. |
 | **Search** | Searches tracks, albums, artists, playlists, radio, podcasts and audiobooks, with a filter chip per type. |
@@ -241,7 +241,7 @@ group_volume, power, set_members, ungroup, select_source),
 `players/sleep_timer/*`, `players/add_currently_playing_to_favorites`,
 `player_queues/get`, `player_queues/items`, `player_queues/*` (play, pause,
 stop, next, previous, seek, skip, shuffle, repeat, crossfade, autoplay,
-dont_stop_the_music, play_index, play_media, delete_item, move_item,
+play_index, play_media, delete_item, move_item,
 move_item_end, clear, transfer, save_as_playlist), `music/search`,
 `music/browse`, `music/recently_played_items`, `music/<type>/library_items`,
 `music/playlists/playlist_tracks`, `music/playlists/add_playlist_tracks`,
