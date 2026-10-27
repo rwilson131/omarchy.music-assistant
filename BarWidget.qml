@@ -108,7 +108,6 @@ BarWidget {
   }
 
   function close() { popupOpen = false }
-  function openSection(s) { popupSection = s; popupOpen = true }
 
   // Per-tab setup, run both when the popup opens and when the tab changes:
   // focus the search field, refresh the lists, load the browse root.
@@ -763,7 +762,6 @@ BarWidget {
 
               // ------------------ Browse section
               Column {
-                id: browseTab
                 width: parent.width
                 spacing: Style.space(6)
                 visible: root.popupSection === "browse"
@@ -807,9 +805,9 @@ BarWidget {
                   }
                 }
 
-                Component {
-                  id: browseDelegate
-                  SearchResultRow {
+                Repeater {
+                  model: root.filteredBrowseItems()
+                  delegate: SearchResultRow {
                     required property var modelData
                     readonly property bool folder: modelData.media_type === "folder"
                     bar: root.bar
@@ -828,11 +826,6 @@ BarWidget {
                     onContextMenu: function(mouse) { if (root.service && !folder) root.service.enqueue(modelData.uri, "next", modelData.name) }
                     onMiddleClicked: if (root.service && !folder) root.service.enqueue(modelData.uri, "add", modelData.name)
                   }
-                }
-
-                Repeater {
-                  model: root.filteredBrowseItems()
-                  delegate: browseDelegate
                 }
 
                 Text {
@@ -855,7 +848,6 @@ BarWidget {
 
               // ------------------ Favorites section
               Column {
-                id: favoritesTab
                 width: parent.width
                 spacing: Style.space(4)
                 visible: root.popupSection === "favorites"
@@ -881,9 +873,9 @@ BarWidget {
                   }
                 }
 
-                Component {
-                  id: favRowDelegate
-                  SearchResultRow {
+                Repeater {
+                  model: root.service && root.service.favorites ? root.service.favorites[root.favFilter] || [] : []
+                  delegate: SearchResultRow {
                     required property var modelData
                     bar: root.bar
                     imageUrl: modelData.image_url || ""
@@ -899,11 +891,6 @@ BarWidget {
                     }
                     onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)
                   }
-                }
-
-                Repeater {
-                  model: root.service && root.service.favorites ? root.service.favorites[root.favFilter] || [] : []
-                  delegate: favRowDelegate
                 }
 
                 Text {
@@ -926,9 +913,9 @@ BarWidget {
 
                 readonly property bool drilled: root.service && root.service.drillItem !== null
 
-                Component {
-                  id: playlistDelegate
-                  SearchResultRow {
+                Repeater {
+                  model: root.service && !playlistsTab.drilled ? root.service.playlists : []
+                  delegate: SearchResultRow {
                     required property var modelData
                     bar: root.bar
                     imageUrl: modelData.image_url || ""
@@ -943,11 +930,6 @@ BarWidget {
                     onContextMenu: function(mouse) { if (root.service) root.service.addCurrentToPlaylist(modelData) }
                     onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)
                   }
-                }
-
-                Repeater {
-                  model: root.service && !playlistsTab.drilled ? root.service.playlists : []
-                  delegate: playlistDelegate
                 }
 
                 Text {
@@ -1036,14 +1018,13 @@ BarWidget {
 
               // ------------------ Recent section
               Column {
-                id: recentTab
                 width: parent.width
                 spacing: Style.space(4)
                 visible: root.popupSection === "recent"
 
-                Component {
-                  id: recentDelegate
-                  SearchResultRow {
+                Repeater {
+                  model: root.service ? root.service.recentItems : []
+                  delegate: SearchResultRow {
                     required property var modelData
                     bar: root.bar
                     imageUrl: modelData.image_url || ""
@@ -1056,11 +1037,6 @@ BarWidget {
                     onContextMenu: function(mouse) { if (root.service) root.service.enqueue(modelData.uri, "next", modelData.name) }
                     onMiddleClicked: if (root.service) root.service.enqueue(modelData.uri, "add", modelData.name)
                   }
-                }
-
-                Repeater {
-                  model: root.service ? root.service.recentItems : []
-                  delegate: recentDelegate
                 }
 
                 Text {
