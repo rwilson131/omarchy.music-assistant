@@ -247,7 +247,7 @@ test("QML source retains disconnect, latest-request and badge guards", async () 
   assert.equal(occurrences(widget, 'label: "Autoplay"'), 1)
   assert.doesNotMatch(widget, /Don(?:'|’)t stop|dontStopTheMusic/)
   assert.doesNotMatch(service, /dont_stop_the_music|dontStopTheMusic/)
-  assert.match(widget, /onToggleMute: if \(root\.service\) root\.service\.toggleGroupMute/)
+  assert.match(widget, /onToggleMute: if \(root\.service\) root\.service\.toggleMute\(root\.service\.activePlayerId, true\)/)
   assert.match(service, /"players\/cmd\/group_volume_mute"/)
 
   assert.match(request, /property string requestBody: ""/)
@@ -299,7 +299,7 @@ test("provider health is isolated, bounded and visible in every popup tab", asyn
   assert.match(playersTab, /function sortedPlayers\(\)/)
   assert.match(playersTab, /tab\.service\.transferQueue/)
   assert.match(playersTab, /tab\.service\.toggleMute\(playerRow\.player\.player_id\)/)
-  assert.doesNotMatch(playersTab, /toggleGroupMute/)
+  assert.doesNotMatch(playersTab, /toggleMute\([^\n]*, true\)/)
 })
 
 test("queue tab is isolated without changing its editing controls", async () => {

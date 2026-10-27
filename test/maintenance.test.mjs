@@ -218,7 +218,7 @@ test('active mute follows the whole group while player-row mute stays individual
     {player_id:'leader', type:'player', group_members:['member'], volume_muted:false},
     {player_id:'member', type:'player', synced_to:'leader', group_members:[], volume_muted:false}
   ]
-  root.toggleGroupMute('member')
+  root.toggleMute('member', true)
   assert.deepEqual(calls.at(-1).args, {player_id:'leader', muted:true})
   assert.equal(calls.at(-1).command, 'players/cmd/group_volume_mute')
   assert.equal(root.players[0].volume_muted, true)

@@ -526,7 +526,7 @@ BarWidget {
                   onFavoriteCurrent: if (root.service) root.service.favoriteCurrent()
                   onOpenWebUI: if (root.service) root.service.openWebUI()
                   onChangeVolume: function(percent) { if (root.service) root.service.setVolumeLocal(root.service.activePlayerId, percent) }
-                  onToggleMute: if (root.service) root.service.toggleGroupMute(root.service.activePlayerId)
+                  onToggleMute: if (root.service) root.service.toggleMute(root.service.activePlayerId, true)
                 }
 
                 // Queue options, the sleep timer and stop.
