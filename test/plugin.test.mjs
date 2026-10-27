@@ -302,6 +302,19 @@ test("provider health is isolated, bounded and visible in every popup tab", asyn
   assert.doesNotMatch(playersTab, /toggleGroupMute/)
 })
 
+test("queue tab is isolated without changing its editing controls", async () => {
+  const [widget, queueTab] = await Promise.all([text("BarWidget.qml"), text("QueueTab.qml")])
+  assert.match(widget, /QueueTab \{[\s\S]*id: queueTab[\s\S]*service: root\.service/)
+  assert.match(widget, /event\.key === Qt\.Key_S[\s\S]*root\.popupSection === "queue"[\s\S]*queueTab\.openSave\(\)/)
+  assert.doesNotMatch(widget, /id: queueRow|function openQueueSave/)
+  assert.match(queueTab, /function openSave\(\)/)
+  assert.match(queueTab, /tab\.service\.playIndex/)
+  assert.match(queueTab, /tab\.service\.deleteQueueItem/)
+  assert.match(queueTab, /tab\.service\.moveQueueItem\(/)
+  assert.match(queueTab, /tab\.service\.moveQueueItemEnd/)
+  assert.match(queueTab, /tab\.service\.saveQueueAsPlaylist/)
+})
+
 test("CI is least-privilege, bounded and commit-pinned", async () => {
   const workflow = await text(".github/workflows/plugin-checks.yml")
 

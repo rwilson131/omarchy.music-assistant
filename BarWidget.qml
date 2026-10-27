@@ -38,7 +38,6 @@ BarWidget {
   property bool popupOpen: false
   property string searchFilter: "all"
   property string favFilter: "tracks"
-  property bool queueSaveOpen: false
   property string browseFilter: ""
 
   readonly property real maxLabelWidth: 180
@@ -110,13 +109,6 @@ BarWidget {
 
   function close() { popupOpen = false }
   function openSection(s) { popupSection = s; popupOpen = true }
-
-  // Show the playlist-name field under the queue header and put the
-  // keyboard in it. Deferred so the field is visible before it takes focus.
-  function openQueueSave() {
-    queueSaveOpen = true
-    Qt.callLater(function() { queueSaveName.forceActiveFocus() })
-  }
 
   // Per-tab setup, run both when the popup opens and when the tab changes:
   // focus the search field, refresh the lists, load the browse root.
@@ -292,7 +284,7 @@ BarWidget {
           event.accepted = true
         } else if (event.key === Qt.Key_S && (event.modifiers & Qt.ControlModifier) && root.popupSection === "queue") {
           // Ctrl+S on the Queue tab: name and save the queue as a playlist.
-          root.openQueueSave()
+          queueTab.openSave()
           event.accepted = true
         }
       }
@@ -586,206 +578,12 @@ BarWidget {
               }
 
               // ------------------ Queue section
-              Column {
+              QueueTab {
+                id: queueTab
                 width: parent.width
-                spacing: Style.space(4)
                 visible: root.popupSection === "queue"
-
-                Row {
-                  width: parent.width
-                  Text {
-                    text: "QUEUE (" + (root.service ? root.service.queue.length : 0) + ")"
-                    color: Qt.darker(root.bar.foreground, 1.3)
-                    font.family: root.bar.fontFamily
-                    font.pixelSize: Style.font.caption
-                    font.bold: true
-                    anchors.verticalCenter: parent.verticalCenter
-                  }
-                  Item { width: Style.space(8); height: 1 }
-                  Button {
-                    text: "Save"
-                    tooltipText: "Save the queue as a playlist"
-                    foreground: root.bar.foreground
-                    horizontalPadding: Style.spacing.controlPaddingX
-                    verticalPadding: Style.spacing.controlPaddingY
-                    enabled: root.serviceReady && root.service && root.service.queue.length > 0
-                    opacity: enabled ? 1.0 : 0.4
-                    active: root.queueSaveOpen
-                    onClicked: root.queueSaveOpen ? (root.queueSaveOpen = false) : root.openQueueSave()
-                  }
-                  Button {
-                    text: "Clear"
-                    foreground: root.bar.foreground
-                    horizontalPadding: Style.spacing.controlPaddingX
-                    verticalPadding: Style.spacing.controlPaddingY
-                    enabled: root.serviceReady && root.service && root.service.queue.length > 0
-                    opacity: enabled ? 1.0 : 0.4
-                    onClicked: if (root.service) root.service.clearQueue(root.service.activePlayerId)
-                  }
-                }
-
-                TextField {
-                  id: queueSaveName
-                  width: parent.width
-                  visible: root.queueSaveOpen
-                  placeholderText: "Playlist name, then Enter"
-                  foreground: root.bar.foreground
-                  onAccepted: {
-                    if (root.service && text.length > 0) root.service.saveQueueAsPlaylist(text)
-                    text = ""
-                    root.queueSaveOpen = false
-                  }
-                  Keys.onPressed: function(event) {
-                    if (event.key === Qt.Key_Escape) { root.queueSaveOpen = false; event.accepted = true }
-                  }
-                }
-
-                Repeater {
-                  model: root.service ? root.service.queue : []
-                  delegate: BorderSurface {
-                    id: queueRow
-                    required property var modelData
-                    required property int index
-                    readonly property bool isCurrent: root.service && queueRow.index === root.service.queuePosition
-                    width: parent.width
-                    height: queueInner.implicitHeight + Style.space(8)
-                    radius: Style.spacing.labelGap
-                    color: isCurrent
-                      ? Style.selectedFillFor(root.bar.foreground, Color.accent)
-                      : "transparent"
-                    borderSpec: isCurrent
-                      ? Border.controlSpec("normal", root.bar.foreground, Color.accent)
-                      : Border.none()
-
-                    Row {
-                      id: queueInner
-                      anchors.left: parent.left
-                      anchors.right: parent.right
-                      anchors.verticalCenter: parent.verticalCenter
-                      anchors.leftMargin: queueRow.borderLeft + Style.space(8)
-                      anchors.rightMargin: queueRow.borderRight + Style.space(8)
-                      spacing: Style.space(8)
-
-                      Text {
-                        text: queueRow.modelData.image_url ? "" : (queueRow.isCurrent ? "󰝚" : "")
-                        color: root.bar.foreground
-                        font.family: root.bar.fontFamily
-                        font.pixelSize: Style.font.bodySmall
-                        width: Style.space(18)
-                        horizontalAlignment: Text.AlignHCenter
-                        anchors.verticalCenter: parent.verticalCenter
-                        visible: !queueRow.modelData.image_url && queueRow.isCurrent
-                      }
-                      Image {
-                        source: queueRow.modelData.image_url || ""
-                        width: Style.space(28)
-                        height: Style.space(28)
-                        fillMode: Image.PreserveAspectCrop
-                        visible: source !== ""
-                        asynchronous: true
-                        anchors.verticalCenter: parent.verticalCenter
-                      }
-                      Column {
-                        width: parent.width - Style.space(58) - queueActions.width - Style.space(8)
-                        spacing: Style.space(1)
-                        anchors.verticalCenter: parent.verticalCenter
-                        Text {
-                          text: queueRow.modelData.name || queueRow.modelData.uri || "?"
-                          color: root.bar.foreground
-                          font.family: root.bar.fontFamily
-                          font.pixelSize: Style.font.bodySmall
-                          font.bold: queueRow.isCurrent
-                          elide: Text.ElideRight
-                          width: parent.width
-                        }
-                        Text {
-                          text: queueRow.modelData.artist || queueRow.modelData.uri || ""
-                          color: Qt.darker(root.bar.foreground, 1.4)
-                          font.family: root.bar.fontFamily
-                          font.pixelSize: Style.font.caption
-                          elide: Text.ElideRight
-                          width: parent.width
-                          visible: text !== ""
-                        }
-                      }
-                    }
-
-                    MouseArea {
-                      anchors.fill: parent
-                      cursorShape: Qt.PointingHandCursor
-                      acceptedButtons: Qt.LeftButton | Qt.RightButton
-                      onClicked: function(mouse) {
-                        if (!root.service) return
-                        if (mouse.button === Qt.RightButton) {
-                          root.service.deleteQueueItem(root.service.activePlayerId, queueRow.modelData.queue_item_id)
-                        } else {
-                          root.service.playIndex(root.service.activePlayerId, queueRow.index)
-                        }
-                      }
-                    }
-
-                    // Move up / down / to end / remove. After the MouseArea so
-                    // the buttons get the click.
-                    Row {
-                      id: queueActions
-                      spacing: 0
-                      anchors.right: parent.right
-                      anchors.rightMargin: queueRow.borderRight + Style.space(4)
-                      anchors.verticalCenter: parent.verticalCenter
-                      Button {
-                        iconText: "󰅃"
-                        tooltipText: "Move up"
-                        foreground: root.bar.foreground
-                        iconSize: Style.font.caption
-                        horizontalPadding: Style.space(3)
-                        verticalPadding: Style.space(2)
-                        enabled: queueRow.index > 0
-                        opacity: enabled ? 1.0 : 0.3
-                        onClicked: if (root.service) root.service.moveQueueItem(queueRow.modelData.queue_item_id, -1)
-                      }
-                      Button {
-                        iconText: "󰅀"
-                        tooltipText: "Move down"
-                        foreground: root.bar.foreground
-                        iconSize: Style.font.caption
-                        horizontalPadding: Style.space(3)
-                        verticalPadding: Style.space(2)
-                        enabled: root.service && queueRow.index < root.service.queue.length - 1
-                        opacity: enabled ? 1.0 : 0.3
-                        onClicked: if (root.service) root.service.moveQueueItem(queueRow.modelData.queue_item_id, 1)
-                      }
-                      Button {
-                        iconText: "󰘁"
-                        tooltipText: "Move to end"
-                        foreground: root.bar.foreground
-                        iconSize: Style.font.caption
-                        horizontalPadding: Style.space(3)
-                        verticalPadding: Style.space(2)
-                        enabled: root.service && queueRow.index < root.service.queue.length - 1
-                        opacity: enabled ? 1.0 : 0.3
-                        onClicked: if (root.service) root.service.moveQueueItemEnd(queueRow.modelData.queue_item_id)
-                      }
-                      Button {
-                        iconText: "󰅖"
-                        tooltipText: "Remove from queue"
-                        foreground: root.bar.foreground
-                        iconSize: Style.font.caption
-                        horizontalPadding: Style.space(3)
-                        verticalPadding: Style.space(2)
-                        onClicked: if (root.service) root.service.deleteQueueItem(root.service.activePlayerId, queueRow.modelData.queue_item_id)
-                      }
-                    }
-                  }
-                }
-
-                Text {
-                  text: root.service && root.service.queue.length === 0 ? "Queue is empty." : ""
-                  color: Qt.darker(root.bar.foreground, 1.4)
-                  font.family: root.bar.fontFamily
-                  font.pixelSize: Style.font.caption
-                  width: parent.width
-                  wrapMode: Text.WordWrap
-                }
+                service: root.service
+                bar: root.bar
               }
 
               // ------------------ Search section
