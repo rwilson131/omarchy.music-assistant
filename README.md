@@ -83,8 +83,8 @@ A header shows the active player and its state. Rejected commands remain visible
 
 | Tab | What it does |
 |-----|--------------|
-| **Now** | Album artwork when Music Assistant provides it, with a music-note fallback when it does not; title, transport (previous, play/pause, next, shuffle, repeat, favorite, web UI), progress bar (click to seek), volume slider and mute. Chips for Crossfade, Autoplay, a sleep timer (click cycles 15 → 30 → 60 → 90 min → off) and Stop. |
-| **Players** | Every player, sorted active → playing → idle → groups → unavailable. Click makes a player the one the popup controls, without touching what is playing anywhere; **Move here** carries the active player's queue to that player; right-click mutes. **Join** groups a speaker with the active player, **Leave** removes it, **Ungroup** dissolves the active player's group. The volume slider moves the group when the active player leads one. |
+| **Now** | Album artwork when Music Assistant provides it, with a music-note fallback when it does not; title, transport (previous, play/pause, next, shuffle, repeat, favorite, web UI), progress bar (click to seek), volume slider and mute. Mute applies to the whole group when the active player belongs to one; volume applies to the group when the active player leads it. Chips for Crossfade, Autoplay, a sleep timer (click cycles 15 → 30 → 60 → 90 min → off) and Stop. |
+| **Players** | Every player, sorted active → playing → idle → groups → unavailable. Click makes a player the one the popup controls, without touching what is playing anywhere; **Move here** carries the active player's queue to that player; right-click mutes only that player. **Join** groups a speaker with the active player, **Leave** removes it, **Ungroup** dissolves the active player's group. The volume slider moves the group when the active player leads one. |
 | **Queue** | Click plays an item, right-click removes it. Per-row buttons move it up, down, to the end, or remove it. **Save** (or `Ctrl+S`) asks for a name and saves the queue as a new library playlist, which appears in Lists a few seconds later; **Clear** empties it. |
 | **Search** | Searches tracks, albums, artists, playlists, radio, podcasts and audiobooks, with a filter chip per type. |
 | **Browse** | Walks the server's providers and folders (SiriusXM channels, Pandora stations, local files, …). Folders open, items play. A filter box appears for long folders. |
@@ -122,7 +122,7 @@ omarchy-shell io.github.rwilson131.music-assistant playPause
 | `playPause`, `nextTrack`, `previousTrack`, `stop` | Transport on the active player |
 | `mediaKeys(on\|off\|status)` | Install / remove the Hyprland media-key block; returns the state |
 | `seek(seconds)`, `seekRelative(seconds)`, `skipSeconds(seconds)` | Position |
-| `setVolumePct(percent)`, `volumeUp`, `volumeDown`, `toggleMute` | Volume (steps of 5) |
+| `setVolumePct(percent)`, `volumeUp`, `volumeDown`, `toggleMute` | Group-aware volume and mute (volume steps of 5) |
 | `power(action)` | `"on"` or `"off"` |
 | `activatePlayerById(playerId)`, `transferQueueTo(targetId)` | Change the active player |
 | `groupJoin(playerId)`, `groupLeave(playerId)` | Group a speaker with / remove it from the active player |
@@ -237,7 +237,7 @@ server as semi-trusted:
 ## API commands used
 
 `players/all`, `players/get`, `players/cmd/*` (volume_set, volume_mute,
-group_volume, power, set_members, ungroup, select_source),
+group_volume, group_volume_mute, power, set_members, ungroup, select_source),
 `players/sleep_timer/*`, `players/add_currently_playing_to_favorites`,
 `player_queues/get`, `player_queues/items`, `player_queues/*` (play, pause,
 stop, next, previous, seek, skip, shuffle, repeat, crossfade, autoplay,

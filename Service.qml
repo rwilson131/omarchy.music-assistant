@@ -1293,7 +1293,8 @@ Item {
     // like system volume keys. Raising the hidden level would make the unmute
     // jump loud, and a volume_set sent right behind the unmute gets dropped.
     if (p.volume_muted) {
-      root.setMutedLocal(pid, false)
+      if (root.playerControlsGroup(p)) root.setGroupMutedLocal(pid, false)
+      else root.setMutedLocal(pid, false)
       return
     }
     root.setVolumeLocal(pid, MaApi.volumePercent(p) + delta)
@@ -1308,7 +1309,10 @@ Item {
     var p = root.playerById(pid)
     if (!p) return
     var target = Math.max(0, Math.min(100, Math.round(volumePercent)))
-    if (p.volume_muted) root.setMutedLocal(pid, false)
+    if (p.volume_muted) {
+      if (root.playerControlsGroup(p)) root.setGroupMutedLocal(pid, false)
+      else root.setMutedLocal(pid, false)
+    }
     if (p.group_members && p.group_members.length > 0) p.group_volume = target
     else p.volume_level = target
     root.players = root.players.slice()
@@ -1321,13 +1325,30 @@ Item {
     })
   }
 
+  function playerControlsGroup(player) {
+    return !!player && (player.type === "group" || !!player.synced_to || !!player.active_group
+      || (player.group_members && player.group_members.length > 0))
+  }
+
+  function groupController(player) {
+    if (!player) return null
+    return root.playerById(player.synced_to || player.active_group) || player
+  }
+
   function setMuted(playerId, muted) {
     var pid = playerId || root.activePlayerId
     root.runAction("players/cmd/volume_mute", { player_id: pid, muted: !!muted })
   }
 
-  // Like adjustVolume, record the new mute state locally so a second key
-  // press before the next poll toggles from it instead of the stale state.
+  function setGroupMuted(playerId, muted) {
+    var player = root.playerById(playerId || root.activePlayerId)
+    var controller = root.groupController(player)
+    if (!controller) return
+    root.runAction("players/cmd/group_volume_mute", { player_id: controller.player_id, muted: !!muted })
+  }
+
+  // Record mute state locally so a second press before the next poll toggles
+  // from it instead of stale state. Player-row mute remains individual.
   function setMutedLocal(playerId, muted) {
     var pid = playerId || root.activePlayerId
     var p = root.playerById(pid)
@@ -1338,10 +1359,32 @@ Item {
     root.setMuted(pid, muted)
   }
 
+  // The active controls represent group volume. Mirror a whole-group mute to
+  // known members immediately while Music Assistant applies the server command.
+  function setGroupMutedLocal(playerId, muted) {
+    var player = root.playerById(playerId || root.activePlayerId)
+    var controller = root.groupController(player)
+    if (!controller) return
+    var ids = [player.player_id, controller.player_id].concat(controller.group_members || [])
+    for (var i = 0; i < root.players.length; i++) {
+      var candidate = root.players[i]
+      if (ids.indexOf(candidate.player_id) !== -1 || candidate.synced_to === controller.player_id
+          || candidate.active_group === controller.player_id) candidate.volume_muted = !!muted
+    }
+    root.players = root.players.slice()
+    root.setGroupMuted(controller.player_id, muted)
+  }
+
   function toggleMute(playerId) {
     var pid = playerId || root.activePlayerId
     var p = root.playerById(pid)
     root.setMutedLocal(pid, !(p && p.volume_muted))
+  }
+
+  function toggleGroupMute(playerId) {
+    var pid = playerId || root.activePlayerId
+    var p = root.playerById(pid)
+    root.setGroupMutedLocal(pid, !(p && p.volume_muted))
   }
 
   // Make a player the active one and remember it in config.json so the
@@ -1930,7 +1973,7 @@ Item {
     }
 
     function toggleMute(): string {
-      root.toggleMute(root.activePlayerId)
+      root.toggleGroupMute(root.activePlayerId)
       return "ok"
     }
 

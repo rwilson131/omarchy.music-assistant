@@ -247,6 +247,8 @@ test("QML source retains disconnect, latest-request and badge guards", async () 
   assert.equal(occurrences(widget, 'label: "Autoplay"'), 1)
   assert.doesNotMatch(widget, /Don(?:'|’)t stop|dontStopTheMusic/)
   assert.doesNotMatch(service, /dont_stop_the_music|dontStopTheMusic/)
+  assert.match(widget, /onToggleMute: if \(root\.service\) root\.service\.toggleGroupMute/)
+  assert.match(service, /"players\/cmd\/group_volume_mute"/)
 
   assert.match(request, /property string requestBody: ""/)
   assert.match(request, /__MA_HTTP__/)
@@ -296,6 +298,8 @@ test("provider health is isolated, bounded and visible in every popup tab", asyn
   assert.doesNotMatch(widget, /function sortedPlayers\(/)
   assert.match(playersTab, /function sortedPlayers\(\)/)
   assert.match(playersTab, /tab\.service\.transferQueue/)
+  assert.match(playersTab, /tab\.service\.toggleMute\(playerRow\.player\.player_id\)/)
+  assert.doesNotMatch(playersTab, /toggleGroupMute/)
 })
 
 test("CI is least-privilege, bounded and commit-pinned", async () => {

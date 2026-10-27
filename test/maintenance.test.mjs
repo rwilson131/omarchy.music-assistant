@@ -212,6 +212,34 @@ test('volume failure, expiry, clamp and mute preserve reconciliation and individ
   assert.equal(root.players[1].volume_level,30); assert.equal(root.players[1].volume_muted,false)
 })
 
+test('active mute follows the whole group while player-row mute stays individual', () => {
+  const {root, calls, complete} = serviceFixture()
+  root.players = [
+    {player_id:'leader', type:'player', group_members:['member'], volume_muted:false},
+    {player_id:'member', type:'player', synced_to:'leader', group_members:[], volume_muted:false}
+  ]
+  root.toggleGroupMute('member')
+  assert.deepEqual(calls.at(-1).args, {player_id:'leader', muted:true})
+  assert.equal(calls.at(-1).command, 'players/cmd/group_volume_mute')
+  assert.equal(root.players[0].volume_muted, true)
+  assert.equal(root.players[1].volume_muted, true)
+  complete()
+
+  root.toggleMute('member')
+  assert.deepEqual(calls.at(-1).args, {player_id:'member', muted:false})
+  assert.equal(calls.at(-1).command, 'players/cmd/volume_mute')
+  assert.equal(root.players[0].volume_muted, true)
+  assert.equal(root.players[1].volume_muted, false)
+  complete()
+
+  root.players[1].volume_muted = true
+  root.adjustVolume('leader', 5)
+  assert.deepEqual(calls.at(-1).args, {player_id:'leader', muted:false})
+  assert.equal(calls.at(-1).command, 'players/cmd/group_volume_mute')
+  assert.equal(root.players[0].volume_muted, false)
+  assert.equal(root.players[1].volume_muted, false)
+})
+
 test('null/error queue lookups release the scheduler without inventing an owner', () => {
   const {root, calls, reply} = serviceFixture()
   root.clearQueue('child'); root.stop('child'); reply('queueActionRequest', null)
