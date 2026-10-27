@@ -26,28 +26,35 @@ test("MaRequest preserves JS arrays across callback and queued requests in real 
   try {
     await copyFile(new URL("../MaRequest.qml", import.meta.url), join(dir,"MaRequest.qml"))
     const cases = [
-      {reply:[{player_id:"test",group_members:["child"]}], expected:[{player_id:"test",group_members:["child"]}]},
-      {reply:{result:[{player_id:"wrapped",group_members:[]}]},expected:[{player_id:"wrapped",group_members:[]}]},
-      {reply:{result:{items:[{name:"nested"}]}},expected:{items:[{name:"nested"}]}},
-      {reply:{error:{message:"rejected"}},expected:{error:{message:"rejected"}}},
-      {reply:null,expected:null},
-      {reply:undefined,expected:null}
+      {raw:JSON.stringify([{player_id:"test",group_members:["child"]}]), expected:[{player_id:"test",group_members:["child"]}], error:""},
+      {raw:JSON.stringify({result:[{player_id:"wrapped",group_members:[]}]}),expected:[{player_id:"wrapped",group_members:[]}],error:""},
+      {raw:JSON.stringify({result:{items:[{name:"nested"}]}}),expected:{items:[{name:"nested"}]},error:""},
+      {raw:JSON.stringify({error:{message:"rejected"}}),expected:null,error:"Music Assistant test: rejected"},
+      {raw:"__MA_HTTP__ 0 401\n"+JSON.stringify({error:{message:"secret detail"}}),expected:null,error:"Music Assistant authentication failed (test) [HTTP 401]"},
+      {raw:"__MA_HTTP__ 28 000\n",expected:null,error:"Music Assistant test timed out"},
+      {raw:"null",expected:null,error:""},
+      {raw:"",expected:null,error:"Music Assistant test returned invalid data"}
     ]
-    const payloads = cases.map(c=>({token:"dummy",body:"{}",script:"read -r token; read -r body; printf '%s' '"+(c.reply === undefined ? "" : JSON.stringify(c.reply))+"'"}))
+    const payloads = cases.map(c=>({token:"dummy",body:"{}",script:"read -r token; read -r body; printf '%s' '"+c.raw+"'"}))
     await writeFile(join(dir,"shell.qml"), `import QtQuick
 import Quickshell
 Scope {
  property int index: 0
+ property string reportedError: ""
  property var expected: ${JSON.stringify(cases.map(c=>c.expected))}
+ property var expectedErrors: ${JSON.stringify(cases.map(c=>c.error))}
  property var payloads: ${JSON.stringify(payloads)}
  MaRequest {
   id: request
+  label: "test"
+  errorReporter: function(message, label, ctx) {reportedError=message}
+  successReporter: function(label, ctx) {reportedError=""}
   onResult: function(data, ctx) {
    if (JSON.stringify(data)!==JSON.stringify(expected[index]) || ctx.index!==index) {console.log("FAIL_VALUE");Qt.quit();return;}
    if(index<2 && (!Array.isArray(data)||!Array.isArray(data[0].group_members))) {console.log("FAIL_ARRAY");Qt.quit();return;}
    if(index===2 && !Array.isArray(data.items)) {console.log("FAIL_NESTED");Qt.quit();return;}
-   if(index===3 && Array.isArray(data)) {console.log("FAIL_ERROR");Qt.quit();return;}
-   if(request.replyValid !== (index < payloads.length-1)) {console.log("FAIL_REPLY_VALID");Qt.quit();return;}
+   if(reportedError!==expectedErrors[index] || request.errorText!==expectedErrors[index]) {console.log("FAIL_ERROR:"+reportedError);Qt.quit();return;}
+   if(request.replyValid !== (expectedErrors[index] === "")) {console.log("FAIL_REPLY_VALID");Qt.quit();return;}
    index++;
    if(index===payloads.length) {console.log("PASS_QML_ARRAY_CALLBACKS");Qt.quit();return;}
    request.send(payloads[index],{index:index});

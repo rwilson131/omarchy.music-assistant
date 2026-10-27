@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Report authentication, permission, timeout, oversized-response, HTTP and malformed-data failures for polling, Search, Browse, Favorites, Lists, Recent and provider-health reads. A read error remains visible until dismissed or that same operation succeeds, so unrelated polling cannot erase it.
+
 ## [1.1.14] - 2026-10-23
 
 ### Changed

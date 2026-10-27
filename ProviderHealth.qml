@@ -11,6 +11,8 @@ Item {
   property int connectionGeneration: 0
   property string serverUrl: ""
   property string token: ""
+  property var errorReporter: null
+  property var successReporter: null
   property var providers: []
   property string requestError: ""
 
@@ -86,6 +88,8 @@ Item {
     id: request
     connectionGeneration: root.connectionGeneration
     label: "providers"
+    errorReporter: root.errorReporter
+    successReporter: root.successReporter
     onResult: function(data, ctx) {
       if (!root.ready || !ctx || ctx.connectionGeneration !== root.connectionGeneration) return
       root.mapProviders(data)

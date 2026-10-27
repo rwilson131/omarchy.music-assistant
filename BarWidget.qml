@@ -17,6 +17,7 @@ BarWidget {
   readonly property bool serviceReady: service && service.ready
   readonly property bool serviceConnected: service && service.connected
   readonly property bool sourceBadgesEnabled: !service || !service.config || service.config.showSourceBadge !== false
+  readonly property bool hasServiceError: !!service && (service.actionError !== "" || service.requestError !== "")
 
   readonly property var activePlayer: service && service.activePlayer ? service.activePlayer : null
   readonly property var media: service && service.activeMedia ? service.activeMedia : null
@@ -153,7 +154,7 @@ BarWidget {
       id: glyph
       anchors.verticalCenter: parent.verticalCenter
       text: root.playIcon
-      color: root.service && root.service.actionError
+      color: root.hasServiceError
         ? root.bar.urgent
         : root.isPlaying ? root.bar.barForeground : Qt.darker(root.bar.barForeground, 1.5)
       font.family: root.bar.fontFamily
@@ -226,7 +227,9 @@ BarWidget {
       root.serviceReady
         ? (root.service && root.service.actionError
           ? "Music Assistant — " + root.service.actionError
-          : (root.title ? (root.title + (root.artist ? " — " + root.artist : "")) : "Music Assistant"))
+          : root.service && root.service.requestError
+            ? "Music Assistant — " + root.service.requestError
+            : (root.title ? (root.title + (root.artist ? " — " + root.artist : "")) : "Music Assistant"))
         : "")
     onExited: if (root.bar) root.bar.hideTooltip(root)
   }
@@ -471,6 +474,26 @@ BarWidget {
                   anchors.fill: parent
                   cursorShape: Qt.PointingHandCursor
                   onClicked: if (root.service) root.service.clearActionError()
+                }
+              }
+
+              // Read failures are scoped to Search, Browse, library, provider
+              // or polling requests and clear only when that operation succeeds.
+              Text {
+                width: parent.width
+                visible: root.service && root.service.requestError !== ""
+                textFormat: Text.PlainText
+                text: root.service ? root.service.requestError + "  ·  Click to dismiss" : ""
+                color: root.bar ? root.bar.urgent : Color.urgent
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                font.bold: true
+                wrapMode: Text.WordWrap
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: if (root.service) root.service.clearRequestError()
                 }
               }
 

@@ -59,23 +59,39 @@ function safeImageUrl(v, maxLen) {
 // malicious or malfunctioning server cannot exhaust shell memory.
 function _buildCurlScript(url, maxTime, includeOutput) {
   var escapedUrl = url.replace(/'/g, "'\\''")
-  return "set -e\n" +
+  var tempSetup = "set -e\n" +
     "AUTH=$(mktemp -t ma-auth.XXXXXX)\n" +
-    "BODY=$(mktemp -t ma-body.XXXXXX)\n" +
-    "chmod 600 \"$AUTH\" \"$BODY\"\n" +
-    "trap 'rm -f \"$AUTH\" \"$BODY\"' EXIT\n" +
-    "IFS= read -r token\n" +
+    "BODY=$(mktemp -t ma-body.XXXXXX)\n"
+  var inputSetup = "IFS= read -r token\n" +
     "IFS= read -r body\n" +
     "printf '%s' \"Authorization: Bearer ${token}\" > \"$AUTH\"\n" +
-    "printf '%s' \"$body\" > \"$BODY\"\n" +
-    "curl -sS --max-time " + maxTime + " --max-filesize " + MAX_RESPONSE_BYTES + " -X POST " +
-    "-H 'Content-Type: application/json' -H '@'\"$AUTH\" " +
-    // Without the body, print only the HTTP status so callers can report
-    // failures (Music Assistant answers errors with a non-200 status).
-    // The elapsed time lets the service tell a stuck stream slot (the server
-    // waits 15 s before answering 500) from an immediate rejection.
-    (includeOutput ? "" : "-o /dev/null -w '%{http_code} %{time_total}' ") +
-    "'" + escapedUrl + "/api' " +
+    "printf '%s' \"$body\" > \"$BODY\"\n"
+  var request = "curl -sS --max-time " + maxTime + " --max-filesize " + MAX_RESPONSE_BYTES + " -X POST " +
+    "-H 'Content-Type: application/json' -H '@'\"$AUTH\" "
+
+  if (includeOutput) {
+    // Prefix the body with transport metadata that MaRequest strips before
+    // parsing JSON. curl does not fail for HTTP 4xx/5xx, so retaining both its
+    // exit code and the HTTP status is necessary to distinguish authentication,
+    // timeout, server and malformed-response failures from an empty result.
+    return tempSetup +
+      "REPLY=$(mktemp -t ma-reply.XXXXXX)\n" +
+      "chmod 600 \"$AUTH\" \"$BODY\" \"$REPLY\"\n" +
+      "trap 'rm -f \"$AUTH\" \"$BODY\" \"$REPLY\"' EXIT\n" +
+      inputSetup + "set +e\n" +
+      "STATUS=$(" + request + "-o \"$REPLY\" -w '%{http_code}' '" + escapedUrl + "/api' --data-binary '@'\"$BODY\")\n" +
+      "CURL_CODE=$?\n" +
+      "set -e\n" +
+      "printf '__MA_HTTP__ %s %s\\n' \"$CURL_CODE\" \"${STATUS:-000}\"\n" +
+      "cat \"$REPLY\"\n"
+  }
+
+  // Actions do not need their response body. Print status and elapsed time so
+  // callers can report failures and identify the server's 15-second stream-slot wait.
+  return tempSetup +
+    "chmod 600 \"$AUTH\" \"$BODY\"\n" +
+    "trap 'rm -f \"$AUTH\" \"$BODY\"' EXIT\n" + inputSetup + request +
+    "-o /dev/null -w '%{http_code} %{time_total}' '" + escapedUrl + "/api' " +
     "--data-binary '@'\"$BODY\"\n"
 }
 

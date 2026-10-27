@@ -50,6 +50,10 @@ Item {
   // Command failures remain visible in the popup until a later command succeeds
   // or the user dismisses them. Polling success must not erase action feedback.
   property string actionError: ""
+  // Read failures are scoped by operation. A successful player poll must not
+  // erase a failed Search, Browse or library request.
+  property string requestError: ""
+  property string requestErrorLabel: ""
   property int revision: 0
 
   ProviderHealth {
@@ -58,6 +62,8 @@ Item {
     connectionGeneration: root.connectionGeneration
     serverUrl: root.config && root.config.url ? root.config.url : ""
     token: root.config && root.config.token ? root.config.token : ""
+    errorReporter: root.reportRequestFailure
+    successReporter: root.clearRequestErrorForLabel
   }
   readonly property var providers: providerHealth.providers
   readonly property var providerProblems: providerHealth.problems
@@ -602,6 +608,8 @@ Item {
     root.queueItemsDirty = true
     root.lastQueueItemsSignature = ""
     root.lastQueueItemsFetchAt = 0
+    root.requestError = ""
+    root.requestErrorLabel = ""
     root.applyQueueInfo(null)
     var requests = [playersRequest, queueInfoRequest, queueRequest, queueActionRequest,
       healLookup, healQueues, searchRequest, favoritesRequest, playlistsRequest,
@@ -651,6 +659,8 @@ Item {
     id: playersRequest
     connectionGeneration: root.connectionGeneration
     label: "players"
+    errorReporter: root.reportRequestFailure
+    successReporter: root.clearRequestErrorForLabel
     onResult: function(data, ctx) {
       if (!root.connectionContextCurrent(ctx)) return
       if (ctx.generation !== root.selectionGeneration) { root.pollInFlight = false; root.refreshState(); return }
@@ -673,6 +683,8 @@ Item {
     id: queueInfoRequest
     connectionGeneration: root.connectionGeneration
     label: "queue info"
+    errorReporter: root.reportRequestFailure
+    successReporter: root.clearRequestErrorForLabel
     onResult: function(data, ctx) {
       if (!root.connectionContextCurrent(ctx)) return
       if (!root.queueContextCurrent(ctx)) { root.finishQueuePoll(ctx); return }
@@ -691,6 +703,8 @@ Item {
     id: queueRequest
     connectionGeneration: root.connectionGeneration
     label: "queue"
+    errorReporter: root.reportRequestFailure
+    successReporter: root.clearRequestErrorForLabel
     onResult: function(data, ctx) {
       if (!root.connectionContextCurrent(ctx)) return
       if (root.queueContextCurrent(ctx) && root.queuePayloadValid(data)) {
@@ -884,6 +898,34 @@ Item {
 
   function clearActionError() {
     root.actionError = ""
+  }
+
+  function requestFeedbackCurrent(label, ctx) {
+    if (!root.connectionContextCurrent(ctx)) return false
+    if (label === "players") return ctx.generation === root.selectionGeneration
+    if (label === "queue info" || label === "queue") return root.queueContextCurrent(ctx)
+    if (label === "search") return ctx.generation === root.searchGeneration && ctx.query === root.searchQuery
+    if (label === "browse") return ctx.generation === root.browseGeneration
+    if (label === "collection") return ctx.generation === root.drillGeneration
+    return true
+  }
+
+  function reportRequestFailure(message, label, ctx) {
+    if (!root.requestFeedbackCurrent(label, ctx)) return
+    root.requestError = String(message || "Music Assistant request failed")
+    root.requestErrorLabel = String(label || "request")
+  }
+
+  function clearRequestErrorForLabel(label, ctx) {
+    if (!root.requestFeedbackCurrent(label, ctx)) return
+    if (root.requestErrorLabel !== String(label || "request")) return
+    root.requestError = ""
+    root.requestErrorLabel = ""
+  }
+
+  function clearRequestError() {
+    root.requestError = ""
+    root.requestErrorLabel = ""
   }
 
   function actionSucceeded(code, httpCode) {
@@ -1387,6 +1429,8 @@ Item {
     id: searchRequest
     connectionGeneration: root.connectionGeneration
     label: "search"
+    errorReporter: root.reportRequestFailure
+    successReporter: root.clearRequestErrorForLabel
     onResult: function(data, ctx) {
       if (!root.connectionContextCurrent(ctx)) return
       if (!ctx || ctx.generation !== root.searchGeneration || ctx.query !== root.searchQuery) return
@@ -1425,6 +1469,8 @@ Item {
     id: favoritesRequest
     connectionGeneration: root.connectionGeneration
     label: "favorites"
+    errorReporter: root.reportRequestFailure
+    successReporter: root.clearRequestErrorForLabel
     onResult: function(data, ctx) {
       if (!root.connectionContextCurrent(ctx)) return
       var next = Object.assign({}, root.favorites)
@@ -1444,6 +1490,8 @@ Item {
     id: playlistsRequest
     connectionGeneration: root.connectionGeneration
     label: "playlists"
+    errorReporter: root.reportRequestFailure
+    successReporter: root.clearRequestErrorForLabel
     onResult: function(data, ctx) {
       if (!root.connectionContextCurrent(ctx)) return
       root.playlists = root.mapItems(data, MaApi.MAX_PLAYLISTS)
@@ -1460,6 +1508,8 @@ Item {
     id: recentRequest
     connectionGeneration: root.connectionGeneration
     label: "recent"
+    errorReporter: root.reportRequestFailure
+    successReporter: root.clearRequestErrorForLabel
     onResult: function(data, ctx) {
       if (!root.connectionContextCurrent(ctx)) return
       root.recentItems = MaApi.boundedArray(Array.isArray(data) ? data : [], MaApi.MAX_RECENT_ITEMS).map(function(it) {
@@ -1729,6 +1779,8 @@ Item {
     id: browseRequest
     connectionGeneration: root.connectionGeneration
     label: "browse"
+    errorReporter: root.reportRequestFailure
+    successReporter: root.clearRequestErrorForLabel
     onResult: function(data, ctx) {
       if (!root.connectionContextCurrent(ctx)) return
       if (!ctx || ctx.generation !== root.browseGeneration) return
@@ -1783,6 +1835,8 @@ Item {
     id: drillRequest
     connectionGeneration: root.connectionGeneration
     label: "collection"
+    errorReporter: root.reportRequestFailure
+    successReporter: root.clearRequestErrorForLabel
     onResult: function(data, ctx) {
       if (!root.connectionContextCurrent(ctx)) return
       if (!ctx || ctx.generation !== root.drillGeneration) return
@@ -1819,6 +1873,8 @@ Item {
         connected: root.connected,
         lastError: root.lastError,
         actionError: root.actionError,
+        requestError: root.requestError,
+        requestErrorLabel: root.requestErrorLabel,
         providerHealthSummary: root.providerHealthSummary,
         providerProblemCount: root.providerProblems.length,
         configError: root.configError,

@@ -15,8 +15,8 @@ function serviceFixture() {
     ready: true, connected: true, queue: [], queueInfo: null, queueRevision: 0, revision: 0,
     config: {url: 'https://music.example', token: 'synthetic'}, pendingActions: [], currentAction: null,
     actionSequence: 0, pendingVolumes: {}, volumeSequence: 0, playersPollSequence: 0,
-    searchGeneration: 0, browseGeneration: 0, drillGeneration: 0, favoriteTypes: ['tracks'],
-    healInProgress: false, healRetry: false, lastHealAt: 0, actionError: '',
+    searchGeneration: 0, searchQuery: '', browseGeneration: 0, drillGeneration: 0, favoriteTypes: ['tracks'],
+    healInProgress: false, healRetry: false, lastHealAt: 0, actionError: '', requestError: '', requestErrorLabel: '',
     queueItemsDirty: true, lastQueueItemsSignature: '', lastQueueItemsFetchAt: 0, queueItemsMaxAgeMs: 15000}
   const noop = () => {}
   const context = vm.createContext({root, MaApi, ConfigSchema, Qt: {callLater: f => later.push(f)},
@@ -267,6 +267,24 @@ test('individual volume reconciles after actual action completion', () => {
   assert.equal(root.pendingVolumes.speaker, undefined)
 })
 
+test('read failures clear only after the same operation succeeds', () => {
+  const {root} = serviceFixture()
+  const search = {connectionGeneration:0, generation:0, query:''}
+  root.reportRequestFailure('Music Assistant search timed out', 'search', search)
+  assert.equal(root.requestError, 'Music Assistant search timed out')
+  assert.equal(root.requestErrorLabel, 'search')
+  root.clearRequestErrorForLabel('players', {connectionGeneration:0, generation:0})
+  assert.equal(root.requestError, 'Music Assistant search timed out')
+  root.clearRequestErrorForLabel('search', search)
+  assert.equal(root.requestError, '')
+  assert.equal(root.requestErrorLabel, '')
+  root.reportRequestFailure('stale search failure', 'search', {connectionGeneration:0, generation:1, query:'old'})
+  assert.equal(root.requestError, '', 'superseded reads cannot publish feedback')
+  root.reportRequestFailure('Music Assistant browse failed [HTTP 500]', 'browse', {connectionGeneration:0, generation:0})
+  root.clearRequestError()
+  assert.equal(root.requestError, '')
+})
+
 test('action failures stay visible until dismissal or a successful command', () => {
   const {root, actionProc, complete, reply} = serviceFixture()
   root.reportActionStatus('players/cmd/play','500',0.2,{},null)
@@ -388,18 +406,32 @@ test('canonical artwork accepts serialized IDs and safe direct URLs without leak
   assert.equal(api.itemImageUrl({}, 'https://music.example'), '')
 })
 
-test('actual MaRequest parser distinguishes JSON null, errors, arrays and failed reads', async () => {
+test('actual MaRequest parser distinguishes results from transport, HTTP, JSON and API errors', async () => {
   const source = await readFile(new URL('../MaRequest.qml', import.meta.url), 'utf8')
   const body = source.match(/    onStreamFinished: \{([\s\S]*?)\n    }/)[1]
-  for (const [text, valid, expected] of [['null', true, null], ['', false, null], ['invalid', false, null],
-    ['{"error":{"message":"rejected"}}', true, {error:{message:'rejected'}}],
-    ['{"result":[]}', true, []]]) {
-    let actual
-    const request = {onResult(data) {actual = data}, context:{}}
+  const cases = [
+    ['null', true, null, ''],
+    ['{"result":[]}', true, [], ''],
+    ['', false, null, 'Music Assistant test returned invalid data'],
+    ['invalid', false, null, 'Music Assistant test returned invalid data'],
+    ['{"error":{"message":"rejected"}}', false, null, 'Music Assistant test: rejected'],
+    ['__MA_HTTP__ 0 401\n{"error":{"message":"do not expose"}}', false, null, 'Music Assistant authentication failed (test) [HTTP 401]'],
+    ['__MA_HTTP__ 28 000\n', false, null, 'Music Assistant test timed out']
+  ]
+  for (const [text, valid, expected, expectedError] of cases) {
+    let actual, reported = ''
+    const request = {label:'test',requestGeneration:0,connectionGeneration:0,context:{},replyValid:false,errorText:'',
+      onResult(data) {actual = data}, errorReporter(message) {reported = message}, successReporter() {reported = ''}}
     const context = vm.createContext({text, request, console:{warn() {}}})
+    for (const name of ['failureMessage','jsonErrorMessage','reportFailure','reportSuccess']) {
+      const fn = source.match(new RegExp('  function '+name+'\\([^\\n]*\\) \\{[\\s\\S]*?\\n  }'))[0]
+      vm.runInContext(fn,context); request[name]=context[name]
+    }
     vm.runInContext('(function() {' + body + '})()', context)
     assert.equal(request.replyValid, valid)
     assert.equal(JSON.stringify(actual), JSON.stringify(expected))
+    assert.equal(request.errorText, expectedError)
+    assert.equal(reported, expectedError)
     if (Array.isArray(expected)) assert.equal(Array.isArray(actual), true)
   }
 })
@@ -412,7 +444,7 @@ test('MaRequest rejects old results and deferred pending sends after generation 
   const context = vm.createContext({request, Qt:{callLater:f=>later.push(f)},
     Quickshell:{env:()=>'/bin/bash'}, text:'[]', console:{warn(){}}})
   Object.defineProperty(context, 'running', {get:()=>request.running})
-  for (const name of ['send','clearPending']) {
+  for (const name of ['send','clearPending','failureMessage','jsonErrorMessage','reportFailure','reportSuccess']) {
     const fn = source.match(new RegExp('  function '+name+'\\([^\\n]*\\) \\{[\\s\\S]*?\\n  }'))[0]
     vm.runInContext(fn,context); request[name]=context[name]
   }
