@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.15] - 2026-10-26
+
 ### Fixed
 - Make the Now-tab and IPC mute controls follow Music Assistant's group-mute behavior, including unmuting the whole group from a volume adjustment. Right-click mute in Players remains an individual-player action.
 - Remove the duplicate **Don't stop** queue control. Music Assistant 2.10 implements `dont_stop_the_music` only as a backwards-compatible alias for Autoplay, so both controls changed the same queue setting.
