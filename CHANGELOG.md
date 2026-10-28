@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Render player, queue, media, browse, and provider-controlled labels as plain text so Qt cannot auto-detect injected markup and issue unintended URL requests.
+
 ## [1.1.16] - 2026-10-26
 
 ### Changed

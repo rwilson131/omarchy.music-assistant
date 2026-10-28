@@ -166,6 +166,7 @@ BarWidget {
 
       Text {
         id: labelText
+        textFormat: Text.PlainText
         text: root.serviceReady
           ? (root.title ? (root.title + (root.artist ? "  ·  " + root.artist : "")) : (root.hasMedia ? "" : "Nothing playing"))
           : "Music Assistant: setup"
@@ -442,6 +443,7 @@ BarWidget {
 
                 Text {
                   anchors.fill: parent
+                  textFormat: Text.PlainText
                   wrapMode: Text.WordWrap
                   color: root.bar.foreground
                   font.family: root.bar.fontFamily
@@ -754,6 +756,7 @@ BarWidget {
                   }
                   Text {
                     width: parent.width - browseBackBtn.width - Style.space(6)
+                    textFormat: Text.PlainText
                     text: root.service ? (root.service.browseName || "Music Assistant") + (root.service.browseLoading ? "  …" : "") : ""
                     color: root.bar.foreground
                     font.family: root.bar.fontFamily
@@ -940,6 +943,7 @@ BarWidget {
                   }
                   Text {
                     width: parent.width - drillBackBtn.width - drillPlayBtn.width - Style.space(12)
+                    textFormat: Text.PlainText
                     text: root.service && root.service.drillItem ? root.service.drillItem.name + (root.service.drillLoading ? "  …" : "") : ""
                     color: root.bar.foreground
                     font.family: root.bar.fontFamily

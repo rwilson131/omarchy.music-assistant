@@ -56,6 +56,7 @@ BorderSurface {
 
       Text {
         id: titleText
+        textFormat: Text.PlainText
         anchors.left: parent.left
         anchors.right: badges.left
         anchors.rightMargin: Style.space(6)
@@ -84,6 +85,7 @@ BorderSurface {
           implicitHeight: typeLbl.implicitHeight + Style.space(4)
           Text {
             id: typeLbl
+            textFormat: Text.PlainText
             anchors.centerIn: parent
             text: root.type
             color: root.bar.foreground
@@ -102,6 +104,7 @@ BorderSurface {
           implicitHeight: srcLbl.implicitHeight + Style.space(4)
           Text {
             id: srcLbl
+            textFormat: Text.PlainText
             anchors.centerIn: parent
             text: root.source
             color: Qt.darker(root.bar.foreground, 1.2)
@@ -114,6 +117,7 @@ BorderSurface {
   }
 
   Text {
+    textFormat: Text.PlainText
     visible: root.subtitle !== ""
     anchors.left: parent.left
     anchors.right: parent.right

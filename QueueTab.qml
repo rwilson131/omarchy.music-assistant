@@ -118,6 +118,7 @@ Column {
           spacing: Style.space(1)
           anchors.verticalCenter: parent.verticalCenter
           Text {
+            textFormat: Text.PlainText
             text: queueRow.modelData.name || queueRow.modelData.uri || "?"
             color: tab.bar.foreground
             font.family: tab.bar.fontFamily
@@ -127,6 +128,7 @@ Column {
             width: parent.width
           }
           Text {
+            textFormat: Text.PlainText
             text: queueRow.modelData.artist || queueRow.modelData.uri || ""
             color: Qt.darker(tab.bar.foreground, 1.4)
             font.family: tab.bar.fontFamily

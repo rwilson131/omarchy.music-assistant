@@ -106,6 +106,7 @@ Column {
           anchors.verticalCenter: parent.verticalCenter
 
           Text {
+            textFormat: Text.PlainText
             text: playerRow.rowTitle
             color: tab.bar.foreground
             font.family: tab.bar.fontFamily
@@ -115,6 +116,7 @@ Column {
             width: parent.width
           }
           Text {
+            textFormat: Text.PlainText
             text: playerRow.rowDetail
             color: Qt.darker(tab.bar.foreground, 1.4)
             font.family: tab.bar.fontFamily

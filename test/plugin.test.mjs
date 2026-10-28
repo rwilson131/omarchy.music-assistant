@@ -339,6 +339,29 @@ test("queue tab is isolated without changing its editing controls", async () => 
   assert.match(queueTab, /tab\.service\.saveQueueAsPlaylist/)
 })
 
+test("server-controlled labels render as plain text", async () => {
+  const [widget, players, queue, controls, results, providerHealth] = await Promise.all([
+    text("BarWidget.qml"), text("PlayersTab.qml"), text("QueueTab.qml"),
+    text("PlayerControls.qml"), text("SearchResultRow.qml"), text("ProviderHealthBanner.qml"),
+  ])
+
+  assert.match(widget, /id: labelText\n\s+textFormat: Text\.PlainText\n\s+text: root\.serviceReady[\s\S]*?root\.title/)
+  assert.match(widget, /anchors\.fill: parent\n\s+textFormat: Text\.PlainText\n\s+wrapMode:[\s\S]*?root\.service\.configError/)
+  assert.match(widget, /textFormat: Text\.PlainText\n\s+text: root\.service \? \(root\.service\.browseName/)
+  assert.match(widget, /textFormat: Text\.PlainText\n\s+text: root\.service && root\.service\.drillItem \? root\.service\.drillItem\.name/)
+  assert.match(players, /textFormat: Text\.PlainText\n\s+text: playerRow\.rowTitle/)
+  assert.match(players, /textFormat: Text\.PlainText\n\s+text: playerRow\.rowDetail/)
+  assert.match(queue, /textFormat: Text\.PlainText\n\s+text: queueRow\.modelData\.name/)
+  assert.match(queue, /textFormat: Text\.PlainText\n\s+text: queueRow\.modelData\.artist/)
+  assert.match(controls, /textFormat: Text\.PlainText\n\s+text: root\.title/)
+  assert.match(controls, /textFormat: Text\.PlainText\n\s+text: root\.artist/)
+  assert.match(results, /id: titleText\n\s+textFormat: Text\.PlainText[\s\S]*?text: root\.title/)
+  assert.match(results, /textFormat: Text\.PlainText\n\s+visible: root\.subtitle[\s\S]*?text: root\.subtitle/)
+  assert.match(results, /id: typeLbl\n\s+textFormat: Text\.PlainText[\s\S]*?text: root\.type/)
+  assert.match(results, /id: srcLbl\n\s+textFormat: Text\.PlainText[\s\S]*?text: root\.source/)
+  assert.match(providerHealth, /textFormat: Text\.PlainText\n\s+text: root\.service \? root\.service\.providerHealthSummary/)
+})
+
 test("CI is least-privilege, bounded and commit-pinned", async () => {
   const workflow = await text(".github/workflows/plugin-checks.yml")
 
@@ -377,7 +400,7 @@ test("manifest, preview and third-party notices remain publication-ready", async
     text("README.md"), text("THIRD_PARTY_NOTICES.md"), text("LICENSES/Apache-2.0.txt"),
   ])
   const changelog = await text("CHANGELOG.md")
-  assert.match(changelog, /^## \[Unreleased\]\n\n## \[1\.1\.16\] - 2026-10-26\n\n### Changed\n[\s\S]*?\n### Fixed\n[\s\S]*?\n## \[1\.1\.15\] - 2026-10-26\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.14\] - 2026-10-23\n\n### Changed\n[\s\S]*?\n## \[1\.1\.13\] - 2026-10-23\n\n### Added\n[\s\S]*?\n### Fixed\n[\s\S]*?\n### Changed\n[\s\S]*?\n## \[1\.1\.12\] - 2026-10-23\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.11\] - 2026-10-23\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.10\] - 2026-10-19\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.9\] - 2026-10-13\n\n### Changed\n[\s\S]*?\n\n## \[1\.1\.8\] - 2026-10-10\n\n### Security\n[\s\S]*?\n\n## \[1\.1\.7\] - 2026-10-09$/m)
+  assert.match(changelog, /^## \[Unreleased\]\n\n### Security\n[\s\S]*?\n## \[1\.1\.16\] - 2026-10-26\n\n### Changed\n[\s\S]*?\n### Fixed\n[\s\S]*?\n## \[1\.1\.15\] - 2026-10-26\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.14\] - 2026-10-23\n\n### Changed\n[\s\S]*?\n## \[1\.1\.13\] - 2026-10-23\n\n### Added\n[\s\S]*?\n### Fixed\n[\s\S]*?\n### Changed\n[\s\S]*?\n## \[1\.1\.12\] - 2026-10-23\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.11\] - 2026-10-23\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.10\] - 2026-10-19\n\n### Fixed\n[\s\S]*?\n## \[1\.1\.9\] - 2026-10-13\n\n### Changed\n[\s\S]*?\n\n## \[1\.1\.8\] - 2026-10-10\n\n### Security\n[\s\S]*?\n\n## \[1\.1\.7\] - 2026-10-09$/m)
   assert.match(readme, /^## Requirements$/m)
   assert.match(readme, /^## Removal$/m)
   assert.match(readme, /^## Pandora stream recovery$/m)

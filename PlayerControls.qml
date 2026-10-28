@@ -93,6 +93,7 @@ Item {
       spacing: Style.space(2)
 
       Text {
+        textFormat: Text.PlainText
         text: root.title || "Nothing playing"
         color: root.bar.foreground
         font.family: root.bar.fontFamily
@@ -105,6 +106,7 @@ Item {
         elide: Text.ElideRight
       }
       Text {
+        textFormat: Text.PlainText
         text: root.artist + (root.artist && root.album ? " · " : "") + root.album
         color: Qt.darker(root.bar.foreground, 1.35)
         font.family: root.bar.fontFamily
